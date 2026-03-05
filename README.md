@@ -6,8 +6,7 @@ Before you begin, ensure you have the following installed on your machine:
 * [Docker](https://docs.docker.com/get-docker/) — Container runtime
 * [kind](https://kind.sigs.k8s.io/) — (Kubernetes IN Docker)
 * [kubectl](https://kubernetes.io/docs/tasks/tools/) — Kubernetes command-line tool
-* [GitHub Personal Access Token (PAT)](https://github.com/settings/personal-access-tokens) — A fine-grained PAT with read/write access to the repositories you want to manage. (Learn More
-* [GitHub Personal Access Token (PAT)](https://github.com/settings/personal-access-tokens) — A fine-grained PAT with read/write access to the repositories you want to manage. [Learn more]()
+* [GitHub Personal Access Token (PAT)](https://github.com/settings/personal-access-tokens) — A fine-grained PAT with read/write access to the repositories you want to manage. [Learn more](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
 ## Setup & Deployment Guide
 ### 1. Set Environment Variables
