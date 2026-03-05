@@ -96,17 +96,30 @@ curl -X GET http://localhost:8000/tools \
   -H "Authorization: Bearer $GITHUB_PAT"
 ```
 
-To execute a tool, send a POST request to `/run-tool`:
+To test, try running curl command to read the `README` file from GitHub's famous Hello-World repository:
 
 ```bash
 curl -X POST http://localhost:8000/run-tool \
   -H "Authorization: Bearer $GITHUB_PAT" \
   -H "Content-Type: application/json" \
   -d '{
-    "tool_name": "get_repo",
+    "tool_name": "get_file_contents",
     "arguments": {
-        "owner": "octocat",
-        "repo": "Hello-World"
+        "owner": "alisterbaroi",
+        "repo": "github-agent",
+        "path": "README.md"
+    }
+  }'
+```
+Or, fetch repository info using the `search_repositories` tool:
+```bash
+curl -X POST http://localhost:8000/run-tool \
+  -H "Authorization: Bearer $GITHUB_PAT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool_name": "search_repositories",
+    "arguments": {
+        "query": "user:alisterbaroi github-agent"
     }
   }'
 ```
