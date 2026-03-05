@@ -132,7 +132,3 @@ When you are finished testing, you can tear down the entire `kind` cluster to fr
 ```bash
 kind delete cluster --name $CLUSTER_NAME
 ```
-
----
-Note: 
-Generate a script (e.g., `setup.sh`) that automates all of these `kubectl` and `kind` commands for users so they can spin everything up with a single command.
