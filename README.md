@@ -123,6 +123,7 @@ curl -X POST http://localhost:8000/run-tool \
     }
   }'
 ```
+For UI interaction, visit: [localhost:8000/docs](http://localhost:8000/docs)
 
 ### 7. Cleanup
 
