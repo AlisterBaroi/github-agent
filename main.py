@@ -3,8 +3,12 @@ from pydantic import BaseModel
 import httpx
 import os
 import json
+from dotenv import load_dotenv
 
-app = FastAPI(title="Simple GitHub Agent")
+# Load environment variables from a .env file (if one exists)
+load_dotenv()
+
+app = FastAPI(title="GitHub Agent")
 
 # Pointing directly to the Streamable HTTP endpoint
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
