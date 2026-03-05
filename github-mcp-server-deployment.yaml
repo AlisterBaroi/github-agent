@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-mcp-server
+  labels:
+    app: github-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-mcp-server
+  template:
+    metadata:
+      labels:
+        app: github-mcp-server
+    spec:
+      containers:
+      - name: github-mcp-server
+        image: ghcr.io/github/github-mcp-server:latest
+        # Explicitly configure the SSE and Message paths
+        args:
+          - "http"
+          - "--port"
+          - "8082"
+        env:
+        - name: GITHUB_PERSONAL_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-mcp-secret
+              key: GITHUB_PERSONAL_ACCESS_TOKEN
+        ports:
+        - containerPort: 8082
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-mcp-service
+spec:
+  selector:
+    app: github-mcp-server
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8082

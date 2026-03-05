@@ -1,0 +1,78 @@
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+import httpx
+import os
+import json
+
+app = FastAPI(title="Simple GitHub Agent")
+
+# Pointing directly to the Streamable HTTP endpoint
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
+
+
+class ToolRequest(BaseModel):
+    tool_name: str
+    arguments: dict = {}
+
+
+def parse_sse_response(response_text: str):
+    """Extracts the JSON payload from an SSE formatted response string."""
+    for line in response_text.splitlines():
+        if line.startswith("data: "):
+            return json.loads(line[6:])  # parse everything after 'data: '
+
+    # Fallback if the server actually returned standard JSON
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=500, detail=f"Could not parse response: {response_text}"
+        )
+
+
+@app.get("/tools")
+async def list_tools(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    headers = {"Authorization": authorization, "Content-Type": "application/json"}
+
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        return parse_sse_response(response.text)
+
+
+@app.post("/run-tool")
+async def run_github_tool(request: ToolRequest, authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    headers = {"Authorization": authorization, "Content-Type": "application/json"}
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": request.tool_name, "arguments": request.arguments},
+    }
+
+    async with httpx.AsyncClient(
+        timeout=60.0
+    ) as client:  # Longer timeout for tool execution
+        response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        return parse_sse_response(response.text)
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "Agent is running"}

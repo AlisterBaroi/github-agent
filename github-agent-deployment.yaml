@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-custom-agent
+  labels:
+    app: github-custom-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-custom-agent
+  template:
+    metadata:
+      labels:
+        app: github-custom-agent
+    spec:
+      containers:
+      - name: agent
+        image: github-agent:latest
+        imagePullPolicy: Never # Forces K8s to use the local image we loaded
+        env:
+        # Route directly to the internal Kubernetes service name
+        - name: MCP_SERVER_URL
+          value: "http://github-mcp-service:80/mcp"
+        ports:
+        - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-custom-agent-service
+spec:
+  selector:
+    app: github-custom-agent
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
