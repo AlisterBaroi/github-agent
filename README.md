@@ -70,7 +70,7 @@ curl -X GET http://localhost:8000/tools \
   -H "Authorization: Bearer $GITHUB_PAT"
 ```
 
-To test, try running curl command to read the `README` file from GitHub's famous Hello-World repository:
+To test, try running curl the command to read the `README.md` file from this repository:
 ```bash
 curl -X POST http://localhost:8000/run-tool \
   -H "Authorization: Bearer $GITHUB_PAT" \
@@ -98,10 +98,13 @@ curl -X POST http://localhost:8000/run-tool \
   }'
 ```
 
-For UI interaction, visit: [localhost:8000/docs](http://localhost:8000/docs)
+For testing via UI & API documentations, visit: 
+- [localhost:8000/docs](http://localhost:8000/docs)
+- [localhost:8000/redoc](http://localhost:8000/redoc)
 
 ### 7. Cleanup
 When you are finished testing, you can tear down the entire `kind` cluster to free up local resources:
 ```bash
 kind delete cluster --name $CLUSTER_NAME
 ```
+Optionally, also delete thge GitHub PAT from your GitHub settings.
