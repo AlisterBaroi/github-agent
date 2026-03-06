@@ -12,18 +12,16 @@ transparent. Only `tasks/send` (synchronous execution) is implemented, which
 covers the vast majority of agent-to-agent use cases.
 """
 
-import os
-import uuid
-import logging
-
-import uvicorn
+import os, httpx, uuid, uvicorn, logging
+from pydantic import BaseModel
+from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
-
 from agent import build_agent
+
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 log = logging.getLogger("github-agent")
@@ -32,7 +30,36 @@ log = logging.getLogger("github-agent")
 # AGENT_HOST should be set to this service's cluster-internal URL so that
 # the agent card's `url` field is resolvable by other pods in the cluster.
 AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.0.3"
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
+GITHUB_PAT = os.getenv("GITHUB_PAT", "")
+
+
+# ── A2A request/response models ────────────────────────────────────────────────
+# Defining these as Pydantic models serves two purposes:
+#   1. FastAPI uses them to generate the Swagger UI form automatically
+#   2. Pydantic validates incoming data and gives clear errors for bad requests
+class A2AMessagePart(BaseModel):
+    type: str  # e.g. "text"
+    text: str | None = None  # present when type == "text"
+
+
+class A2AMessage(BaseModel):
+    role: str  # "user" or "agent"
+    parts: list[A2AMessagePart]
+
+
+class A2ATaskParams(BaseModel):
+    id: str  # caller-chosen task ID
+    message: A2AMessage
+
+
+class A2ARequest(BaseModel):
+    jsonrpc: str = "2.0"
+    id: str  # caller-chosen RPC ID
+    method: str  # e.g. "tasks/send"
+    params: A2ATaskParams
+
 
 # ── ADK infrastructure ─────────────────────────────────────────────────────────
 # These are module-level singletons, created once when the container starts.
@@ -125,33 +152,36 @@ async def get_agent_card():
 
 
 @app.post("/")
-async def handle_task(request: Request):
+# async def handle_task(request: Request):
+async def handle_task(body: A2ARequest):
     """
     A2A JSON-RPC 2.0 task endpoint.
-
     Expected request shape for tasks/send:
     {
         "jsonrpc": "2.0",
-        "id":      "caller-chosen-rpc-id",
+        "id":      "test-id-01",
         "method":  "tasks/send",
         "params": {
-            "id": "task-uuid",
+            "id": "task-uuid-01",
             "message": {
                 "role":  "user",
-                "parts": [{"type": "text", "text": "List open issues in my repo"}]
+                "parts": [{"type": "text", "text": "List open issues in my repo username/repo_name"}]
             }
         }
     }
     """
-    body = await request.json()
-    rpc_id = body.get("id", str(uuid.uuid4()))
-    method = body.get("method", "")
-    params = body.get("params", {})
+    # body = await request.json()
+    # rpc_id = body.get("id", str(uuid.uuid4()))
+    # method = body.get("method", "")
+    # params = body.get("params", {})
+    rpc_id = body.id
+    method = body.method
 
     log.info(f"A2A request  method={method}  rpc_id={rpc_id}")
 
     if method == "tasks/send":
-        return await _tasks_send(rpc_id, params)
+        # return await _tasks_send(rpc_id, params)
+        return await _tasks_send(rpc_id, body.params.model_dump())
 
     # Any unsupported JSON-RPC method returns the standard -32601 error code.
     return _rpc_error(rpc_id, -32601, f"Method '{method}' not supported")
@@ -267,6 +297,84 @@ def _rpc_error(rpc_id: str, code: int, message: str) -> JSONResponse:
             "error": {"code": code, "message": message},
         }
     )
+
+
+@app.get("/list_all_tools")
+async def list_all_tools():
+    """
+    Queries the GitHub MCP server directly for its full tool catalogue.
+
+    Rather than reconstructing the list from ADK's internal state, we go back
+    to the authoritative source — the MCP server itself — using a tools/list
+    JSON-RPC call. This guarantees the response is always current, even if the
+    MCP server adds or removes tools at runtime.
+
+    Each tool in the response includes its name, description, and input schema,
+    which tells you exactly what arguments it expects.
+    """
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "list-tools",
+        "method": "tools/list",
+        "params": {},
+    }
+    headers = {
+        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
+            response.raise_for_status()
+
+        raw = response.text
+
+        # The MCP server responds with SSE-formatted text ("data: {...}"),
+        # so we reuse the same parsing logic as the original /tools endpoint.
+        parsed = _parse_mcp_response(raw)
+
+        tools = parsed.get("result", {}).get("tools", [])
+
+        # Return a clean summary so the output is easy to read at a glance,
+        # alongside the full schema for callers who need the argument details.
+        return {
+            "total": len(tools),
+            "tools": [
+                {
+                    "name": t.get("name"),
+                    "description": t.get("description"),
+                    "inputSchema": t.get("inputSchema"),
+                }
+                for t in tools
+            ],
+        }
+
+    except httpx.HTTPStatusError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": f"MCP server returned {exc.response.status_code}",
+                "detail": exc.response.text,
+            },
+        )
+    except Exception as exc:
+        log.error(f"list_all_tools failed: {exc}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+def _parse_mcp_response(text: str) -> dict:
+    """
+    Extracts the JSON payload from an SSE-formatted MCP response.
+    SSE responses prefix each data line with 'data: ', so we strip that
+    prefix and parse what remains. Falls back to plain JSON if needed.
+    """
+    import json
+
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            return json.loads(line[6:])
+    return json.loads(text)  # fallback for plain JSON responses
 
 
 @app.get("/health")

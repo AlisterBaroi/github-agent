@@ -89,7 +89,46 @@ kubectl port-forward service/${AGENT_SERVICE_NAME} 8000:80 -n ${NAMESPACE}
 <!-- kubectl port-forward service/github-custom-agent-service 8000:80 -n $NAMESPACE -->
 
 **In Terminal 2 (Run your tests):**
-Ping the `/tools` endpoint to verify the agent can successfully retrieve the toolset from the MCP server:
+Fetch the agent card (discovery):
+```bash
+curl http://localhost:8000/.well-known/agent.json
+```
+Send a task (A2A tasks/send):
+```bash
+curl -X POST http://localhost:8000/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "test-001",
+    "method": "tasks/send",
+    "params": {
+      "id": "task-001",
+      "message": {
+        "role": "user",
+        "parts": [{"type": "text", "text": "List all repositories of user:alisterbaroi"}]
+      }
+    }
+  }'
+```
+
+Call from another pod in the same cluster (A2A inter-agent):
+```bash
+curl -X POST http://github-custom-agent-service.github-mcp.svc.cluster.local/
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "test-001",
+    "method": "tasks/send",
+    "params": {
+      "id": "task-001",
+      "message": {
+        "role": "user",
+        "parts": [{"type": "text", "text": "List all repositories of user:alisterbaroi"}]
+      }
+    }
+  }'
+```
+<!-- Ping the `/tools` endpoint to verify the agent can successfully retrieve the toolset from the MCP server:
 ```bash
 curl -X GET http://localhost:8000/tools \
   -H "Authorization: Bearer ${GITHUB_PAT}"
@@ -121,7 +160,7 @@ curl -X POST http://localhost:8000/run-tool \
         "query": "user:alisterbaroi github-agent"
     }
   }'
-```
+``` -->
 
 For testing via UI & API documentations, visit: 
 - [localhost:8000/docs](http://localhost:8000/docs)
