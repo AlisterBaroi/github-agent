@@ -27,10 +27,12 @@ export MCP_SECRET_NAME="github-mcp-secret"
 # Agent Variables
 export AGENT_NAME="github-custom-agent"
 export AGENT_SERVICE_NAME="github-custom-agent-service"
+export AGENT_SECRET_NAME="github-agent-secret"
 export AGENT_IMAGE="github-agent:latest"
 
-# GitHub Personal Access Token
-export GITHUB_PAT="<your-access-token-here>" # << Set your access token here
+# API Keys & Token
+export GITHUB_PAT="<github-access-token-here>"  # << Set github access token here
+export GEMINI_API_KEY="<gemini-api-key-here>"   # << Set gemini api key here
 ```
 
 ### 2. Create the Cluster & Namespace
@@ -41,10 +43,14 @@ kubectl create namespace ${NAMESPACE}
 ```
 
 ### 3. Deploy the Secret to the Cluster
-Securely store your GitHub PAT in Kubernetes as a Secret so the MCP server can access it:
+Securely store your GitHub PAT & Gemini API key to Kubernetes as a Secret so the MCP server & agent can access it:
 ```bash
 kubectl create secret generic ${MCP_SECRET_NAME} \
   --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PAT} \
+  --namespace ${NAMESPACE}
+
+kubectl create secret generic ${AGENT_SECRET_NAME} \
+  --from-literal=GOOGLE_API_KEY=${GEMINI_API_KEY} \
   --namespace ${NAMESPACE}
 ```
 
