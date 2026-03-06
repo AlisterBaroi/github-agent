@@ -1,14 +1,16 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-import httpx
-import os
-import json
+import httpx, json, os
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file (if one exists)
 load_dotenv()
 
 app = FastAPI(title="GitHub Agent")
+
+# Add the "Authorize" padlock button to the Swagger UI
+security = HTTPBearer()
 
 # Pointing directly to the Streamable HTTP endpoint
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
@@ -35,11 +37,16 @@ def parse_sse_response(response_text: str):
 
 
 @app.get("/tools")
-async def list_tools(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-
-    headers = {"Authorization": authorization, "Content-Type": "application/json"}
+# async def list_tools(authorization: str = Header(None)):
+async def list_tools(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    # if not authorization:
+    # raise HTTPException(status_code=401, detail="Missing Authorization header")
+    # headers = {"Authorization": authorization, "Content-Type": "application/json"}
+    # HTTPBearer automatically extracts the token from the UI's padlock
+    headers = {
+        "Authorization": f"Bearer {credentials.credentials}",
+        "Content-Type": "application/json",
+    }
 
     payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
 
@@ -53,11 +60,17 @@ async def list_tools(authorization: str = Header(None)):
 
 
 @app.post("/run-tool")
-async def run_github_tool(request: ToolRequest, authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-
-    headers = {"Authorization": authorization, "Content-Type": "application/json"}
+# async def run_github_tool(request: ToolRequest, authorization: str = Header(None)):
+async def run_github_tool(
+    request: ToolRequest, credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    # if not authorization:
+    #     raise HTTPException(status_code=401, detail="Missing Authorization header")
+    # headers = {"Authorization": authorization, "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {credentials.credentials}",
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "jsonrpc": "2.0",
