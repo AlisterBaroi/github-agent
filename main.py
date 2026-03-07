@@ -12,15 +12,16 @@ transparent. Only `tasks/send` (synchronous execution) is implemented, which
 covers the vast majority of agent-to-agent use cases.
 """
 
-import os, httpx, uuid, uvicorn, logging
+# from typing import Any
+import os, json, httpx, uuid, uvicorn, logging
 from pydantic import BaseModel
-from typing import Any
-from fastapi import FastAPI, Request
+from fastapi import FastAPI  # ,Request
 from fastapi.responses import JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
 from agent import build_agent
+from tools_catalogue import tools_router
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
@@ -30,9 +31,7 @@ log = logging.getLogger("github-agent")
 # AGENT_HOST should be set to this service's cluster-internal URL so that
 # the agent card's `url` field is resolvable by other pods in the cluster.
 AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
-AGENT_VERSION = "1.0.3"
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
-GITHUB_PAT = os.getenv("GITHUB_PAT", "")
+AGENT_VERSION = "1.0.5"
 
 
 # ── A2A request/response models ────────────────────────────────────────────────
@@ -157,6 +156,7 @@ async def handle_task(body: A2ARequest):
     """
     A2A JSON-RPC 2.0 task endpoint.
     Expected request shape for tasks/send:
+
     {
         "jsonrpc": "2.0",
         "id":      "test-id-01",
@@ -192,10 +192,7 @@ async def handle_task(body: A2ARequest):
 
 async def _tasks_send(rpc_id: str, params: dict) -> JSONResponse:
     """
-    Core handler for tasks/send.
-
-    Creates an isolated ADK session for this task, runs the agent to
-    completion, and wraps the result in the A2A task response format.
+    Core handler for tasks/send. Creates an isolated ADK session for this task, runs the agent to completion, and wraps the result in A2A task response format.
     """
     task_id = params.get("id", str(uuid.uuid4()))
     user_msg = params.get("message", {})
@@ -254,7 +251,6 @@ async def _tasks_send(rpc_id: str, params: dict) -> JSONResponse:
 async def _run_agent(session_id: str, user_text: str) -> str:
     """
     Drives the ADK Runner for one turn and returns the agent's final reply.
-
     The Runner emits a stream of events internally: the LLM deciding to call
     a tool, the tool executing against the MCP server, the result being fed
     back to the LLM, and so on. We only capture the final text response, which
@@ -299,82 +295,9 @@ def _rpc_error(rpc_id: str, code: int, message: str) -> JSONResponse:
     )
 
 
-@app.get("/list_all_tools")
-async def list_all_tools():
-    """
-    Queries the GitHub MCP server directly for its full tool catalogue.
-
-    Rather than reconstructing the list from ADK's internal state, we go back
-    to the authoritative source — the MCP server itself — using a tools/list
-    JSON-RPC call. This guarantees the response is always current, even if the
-    MCP server adds or removes tools at runtime.
-
-    Each tool in the response includes its name, description, and input schema,
-    which tells you exactly what arguments it expects.
-    """
-    payload = {
-        "jsonrpc": "2.0",
-        "id": "list-tools",
-        "method": "tools/list",
-        "params": {},
-    }
-    headers = {
-        "Authorization": f"Bearer {GITHUB_PAT}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
-            response.raise_for_status()
-
-        raw = response.text
-
-        # The MCP server responds with SSE-formatted text ("data: {...}"),
-        # so we reuse the same parsing logic as the original /tools endpoint.
-        parsed = _parse_mcp_response(raw)
-
-        tools = parsed.get("result", {}).get("tools", [])
-
-        # Return a clean summary so the output is easy to read at a glance,
-        # alongside the full schema for callers who need the argument details.
-        return {
-            "total": len(tools),
-            "tools": [
-                {
-                    "name": t.get("name"),
-                    "description": t.get("description"),
-                    "inputSchema": t.get("inputSchema"),
-                }
-                for t in tools
-            ],
-        }
-
-    except httpx.HTTPStatusError as exc:
-        return JSONResponse(
-            status_code=502,
-            content={
-                "error": f"MCP server returned {exc.response.status_code}",
-                "detail": exc.response.text,
-            },
-        )
-    except Exception as exc:
-        log.error(f"list_all_tools failed: {exc}", exc_info=True)
-        return JSONResponse(status_code=500, content={"error": str(exc)})
-
-
-def _parse_mcp_response(text: str) -> dict:
-    """
-    Extracts the JSON payload from an SSE-formatted MCP response.
-    SSE responses prefix each data line with 'data: ', so we strip that
-    prefix and parse what remains. Falls back to plain JSON if needed.
-    """
-    import json
-
-    for line in text.splitlines():
-        if line.startswith("data: "):
-            return json.loads(line[6:])
-    return json.loads(text)  # fallback for plain JSON responses
+# Register the tools catalogue router. FastAPI merges its routes (/list_all_tools)
+# into the main app transparently — callers see no difference from the outside.
+app.include_router(tools_router)
 
 
 @app.get("/health")

@@ -9,8 +9,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy your FastAPI agent code files
-COPY main.py .
 COPY agent.py .
+COPY tools_catalogue.py .
+COPY main.py .
 
 # Expose the port Uvicorn runs on
 EXPOSE 8000
