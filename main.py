@@ -139,10 +139,6 @@ AGENT_CARD = {
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 app = FastAPI(title="GitHub Agent (A2A)", version=AGENT_VERSION)
 
-# Register the tools catalogue router. FastAPI merges its routes (/list_all_tools)
-# into the main app transparently — callers see no difference from the outside.
-app.include_router(tools_router)
-
 
 @app.get("/.well-known/agent.json", include_in_schema=False)
 async def get_agent_card():
@@ -297,6 +293,11 @@ def _rpc_error(rpc_id: str, code: int, message: str) -> JSONResponse:
             "error": {"code": code, "message": message},
         }
     )
+
+
+# Register the tools catalogue router. FastAPI merges its routes (/list_all_tools)
+# into the main app transparently — callers see no difference from the outside.
+app.include_router(tools_router)
 
 
 @app.get("/health")
