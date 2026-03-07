@@ -12,10 +12,10 @@ transparent. Only `tasks/send` (synchronous execution) is implemented, which
 covers the vast majority of agent-to-agent use cases.
 """
 
-import os, httpx, uuid, uvicorn, logging
+# from typing import Any
+import os, json, httpx, uuid, uvicorn, logging
 from pydantic import BaseModel
-from typing import Any
-from fastapi import FastAPI, Request
+from fastapi import FastAPI  # ,Request
 from fastapi.responses import JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -30,9 +30,105 @@ log = logging.getLogger("github-agent")
 # AGENT_HOST should be set to this service's cluster-internal URL so that
 # the agent card's `url` field is resolvable by other pods in the cluster.
 AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
-AGENT_VERSION = "1.0.3"
+AGENT_VERSION = "1.0.4"
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
 GITHUB_PAT = os.getenv("GITHUB_PAT", "")
+
+
+# ── GitHub OAuth scope → MCP tool permission map ───────────────────────────────
+# This map lives here in main.py because it's purely a concern of the HTTP
+# server layer (the /list_all_tools endpoint). agent.py only needs to know
+# how to build and run the agent — it should not know about permission logic.
+#
+# Each key is a GitHub OAuth scope string (the exact values GitHub returns in
+# the X-OAuth-Scopes response header). The value is the set of MCP tool names
+# that become accessible when that scope is granted. At query time we union
+# together all sets for every scope the PAT holds to build the permitted set.
+# Reference: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
+_SCOPE_TOOL_MAP: dict[str, set[str]] = {
+    "repo": {
+        # `repo` is the broadest scope — full read/write on public & private repos
+        "create_repository",
+        "fork_repository",
+        "get_repository",
+        "delete_repository",
+        "list_repositories_for_user",
+        "get_file_contents",
+        "create_or_update_file",
+        "push_files",
+        "delete_file",
+        "create_issue",
+        "list_issues",
+        "get_issue",
+        "update_issue",
+        "add_issue_comment",
+        "list_issue_comments",
+        "create_pull_request",
+        "list_pull_requests",
+        "get_pull_request",
+        "merge_pull_request",
+        "update_pull_request",
+        "create_pull_request_review",
+        "get_pull_request_files",
+        "get_pull_request_diff",
+        "get_pull_request_reviews",
+        "add_pull_request_review_comment",
+        "list_pull_request_review_comments",
+        "list_branches",
+        "create_branch",
+        "delete_branch",
+        "list_commits",
+        "get_commit",
+        "create_release",
+        "list_releases",
+        "get_code_scanning_alert",
+        "list_code_scanning_alerts",
+    },
+    "public_repo": {
+        # Subset of `repo` — same operations but restricted to public repositories
+        "create_repository",
+        "fork_repository",
+        "get_repository",
+        "get_file_contents",
+        "create_or_update_file",
+        "push_files",
+        "create_issue",
+        "list_issues",
+        "get_issue",
+        "update_issue",
+        "add_issue_comment",
+        "create_pull_request",
+        "list_pull_requests",
+        "get_pull_request",
+        "merge_pull_request",
+        "list_branches",
+        "create_branch",
+        "list_commits",
+        "get_commit",
+        "create_release",
+        "list_releases",
+    },
+    "read:user": {"get_authenticated_user", "list_repositories_for_user"},
+    "user": {"get_authenticated_user", "list_repositories_for_user"},
+    "read:org": {"list_organization_repositories", "get_organization"},
+    "security_events": {
+        "get_code_scanning_alert",
+        "list_code_scanning_alerts",
+        "get_secret_scanning_alert",
+        "list_secret_scanning_alerts",
+    },
+    "gist": {"create_gist", "list_gists", "get_gist", "update_gist", "delete_gist"},
+}
+
+# Search tools call GitHub's public search API and work with any valid token,
+# regardless of which scopes it holds. Always include them unconditionally.
+_ALWAYS_PERMITTED: set[str] = {
+    "search_repositories",
+    "search_code",
+    "search_issues",
+    "search_users",
+    "search_commits",
+}
 
 
 # ── A2A request/response models ────────────────────────────────────────────────
@@ -302,59 +398,95 @@ def _rpc_error(rpc_id: str, code: int, message: str) -> JSONResponse:
 @app.get("/list_all_tools")
 async def list_all_tools():
     """
-    Queries the GitHub MCP server directly for its full tool catalogue.
-
-    Rather than reconstructing the list from ADK's internal state, we go back
-    to the authoritative source — the MCP server itself — using a tools/list
-    JSON-RPC call. This guarantees the response is always current, even if the
-    MCP server adds or removes tools at runtime.
+    Queries the GitHub MCP server directly for its full tool catalogue that is accessable for the provided GitHub Personal Access Token (PAT).
 
     Each tool in the response includes its name, description, and input schema,
     which tells you exactly what arguments it expects.
     """
-    payload = {
+    mcp_headers = {
+        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Content-Type": "application/json",
+    }
+    mcp_payload = {
         "jsonrpc": "2.0",
         "id": "list-tools",
         "method": "tools/list",
         "params": {},
     }
-    headers = {
-        "Authorization": f"Bearer {GITHUB_PAT}",
-        "Content-Type": "application/json",
-    }
 
     try:
+        # ── Step 1: get all tools from the MCP server ──────────────────────────
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
-            response.raise_for_status()
+            mcp_resp = await client.post(
+                MCP_SERVER_URL, json=mcp_payload, headers=mcp_headers
+            )
+            mcp_resp.raise_for_status()
 
-        raw = response.text
+        all_tools: list[dict] = (
+            _parse_mcp_response(mcp_resp.text).get("result", {}).get("tools", [])
+        )
+        all_tool_names: set[str] = {t.get("name") for t in all_tools}
 
-        # The MCP server responds with SSE-formatted text ("data: {...}"),
-        # so we reuse the same parsing logic as the original /tools endpoint.
-        parsed = _parse_mcp_response(raw)
+        # ── Step 2: resolve which tools this PAT is allowed to call ───────────
+        perms = await _resolve_pat_permissions(all_tool_names)
 
-        tools = parsed.get("result", {}).get("tools", [])
+        permitted_names = perms["permitted"]
+        unverified_names = perms["unverified"]
 
-        # Return a clean summary so the output is easy to read at a glance,
-        # alongside the full schema for callers who need the argument details.
-        return {
-            "total": len(tools),
-            "tools": [
-                {
-                    "name": t.get("name"),
-                    "description": t.get("description"),
-                    "inputSchema": t.get("inputSchema"),
-                }
-                for t in tools
-            ],
+        # ── Step 3: filter the MCP list and build the response ─────────────────
+        permitted_tools = [
+            {
+                "name": t.get("name"),
+                "description": t.get("description"),
+                "inputSchema": t.get("inputSchema"),
+            }
+            for t in all_tools
+            if t.get("name") in permitted_names
+        ]
+
+        result: dict = {
+            "token_type": perms["token_type"],
+            "granted_scopes": perms["granted_scopes"],
+            "permitted_total": len(permitted_tools),
+            "permitted_tools": permitted_tools,
         }
 
+        # Surface unverified tools separately rather than silently hiding them.
+        # These are tools the MCP server offers but that have no entry in our
+        # scope map — they may or may not work depending on the token.
+        if unverified_names:
+            result["unverified_tools"] = {
+                "note": (
+                    "These tools exist on the MCP server but have no entry in "
+                    "the scope map. They may work depending on your token's "
+                    "permissions."
+                ),
+                "names": sorted(unverified_names),
+            }
+
+        if perms["token_type"] == "fine-grained":
+            result["warning"] = (
+                "Fine-grained PATs use per-repo permissions that cannot be "
+                "fully introspected via the OAuth scopes API. The permitted "
+                "list was inferred from lightweight read probes and may not "
+                "reflect write permissions accurately."
+            )
+
+        return result
+
     except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if status == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "GitHub rejected the PAT — it may be invalid or expired."
+                },
+            )
         return JSONResponse(
             status_code=502,
             content={
-                "error": f"MCP server returned {exc.response.status_code}",
+                "error": f"Upstream returned {status}",
                 "detail": exc.response.text,
             },
         )
@@ -363,13 +495,80 @@ async def list_all_tools():
         return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
+# ── Permission resolution helper ───────────────────────────────────────────────
+
+
+async def _resolve_pat_permissions(all_tool_names: set[str]) -> dict:
+    """
+    Determines which MCP tools the current PAT is actually permitted to call.
+
+    Classic PATs expose their scopes in the X-OAuth-Scopes response header on
+    any authenticated GitHub API call. We hit GET /user (lightweight, no side
+    effects) and read that header to get the full list of granted scopes, then
+    union together the tool sets for each scope from _SCOPE_TOOL_MAP.
+
+    Fine-grained PATs return an empty X-OAuth-Scopes header because they use
+    a completely different, per-resource permission model. For those we probe
+    GET /user/repos to infer whether repo-level access exists, grant the
+    repo tool set conservatively, and attach a warning to the response.
+    """
+    gh_headers = {
+        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        user_resp = await client.get("https://api.github.com/user", headers=gh_headers)
+        user_resp.raise_for_status()
+
+    scopes_header = user_resp.headers.get("X-OAuth-Scopes", "")
+    is_fine_grained = not scopes_header
+    granted_scopes = (
+        [s.strip() for s in scopes_header.split(",") if s.strip()]
+        if scopes_header
+        else []
+    )
+
+    # Union together every tool set for each scope the PAT holds.
+    permitted: set[str] = set(_ALWAYS_PERMITTED)
+    for scope in granted_scopes:
+        permitted |= _SCOPE_TOOL_MAP.get(scope, set())
+
+    if is_fine_grained:
+        # We can't read fine-grained scopes directly, so probe a cheap
+        # read-only endpoint. A 200 means Contents:read is granted, which
+        # covers most repo-level tools. Write permissions remain unverifiable
+        # without attempting an actual write operation.
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            probe = await client.get(
+                "https://api.github.com/user/repos?per_page=1",
+                headers=gh_headers,
+            )
+        if probe.status_code == 200:
+            permitted |= _SCOPE_TOOL_MAP["repo"]
+
+    # Identify tools the MCP server offers that have no entry in our map at
+    # all — these get surfaced as "unverified" rather than silently dropped.
+    all_mapped: set[str] = set(_ALWAYS_PERMITTED)
+    for tools in _SCOPE_TOOL_MAP.values():
+        all_mapped |= tools
+
+    return {
+        "token_type": "fine-grained" if is_fine_grained else "classic",
+        "granted_scopes": granted_scopes,
+        # Intersect with actual MCP names so we never surface phantom entries
+        "permitted": permitted & all_tool_names,
+        "unverified": all_tool_names - all_mapped,
+    }
+
+
 def _parse_mcp_response(text: str) -> dict:
     """
     Extracts the JSON payload from an SSE-formatted MCP response.
     SSE responses prefix each data line with 'data: ', so we strip that
     prefix and parse what remains. Falls back to plain JSON if needed.
     """
-    import json
 
     for line in text.splitlines():
         if line.startswith("data: "):
