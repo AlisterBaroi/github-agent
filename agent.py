@@ -23,6 +23,98 @@ GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 MODEL = os.getenv("AGENT_MODEL", "gemini-2.0-flash")
 
 
+# ── GitHub OAuth scope → MCP tool permission map ───────────────────────────────
+# Each key is a GitHub OAuth scope string. The value is the set of MCP tool
+# names that become accessible when that scope is granted. We union together
+# all sets for every scope the PAT holds to build the final permitted set.
+# Reference: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
+_SCOPE_TOOL_MAP: dict[str, set[str]] = {
+    "repo": {
+        # `repo` is the broadest scope — full read/write on public and private repos
+        "create_repository",
+        "fork_repository",
+        "get_repository",
+        "delete_repository",
+        "list_repositories_for_user",
+        "get_file_contents",
+        "create_or_update_file",
+        "push_files",
+        "delete_file",
+        "create_issue",
+        "list_issues",
+        "get_issue",
+        "update_issue",
+        "add_issue_comment",
+        "list_issue_comments",
+        "create_pull_request",
+        "list_pull_requests",
+        "get_pull_request",
+        "merge_pull_request",
+        "update_pull_request",
+        "create_pull_request_review",
+        "get_pull_request_files",
+        "get_pull_request_diff",
+        "get_pull_request_reviews",
+        "add_pull_request_review_comment",
+        "list_pull_request_review_comments",
+        "list_branches",
+        "create_branch",
+        "delete_branch",
+        "list_commits",
+        "get_commit",
+        "create_release",
+        "list_releases",
+        "get_code_scanning_alert",
+        "list_code_scanning_alerts",
+    },
+    "public_repo": {
+        # Subset of `repo` — same operations but restricted to public repositories
+        "create_repository",
+        "fork_repository",
+        "get_repository",
+        "get_file_contents",
+        "create_or_update_file",
+        "push_files",
+        "create_issue",
+        "list_issues",
+        "get_issue",
+        "update_issue",
+        "add_issue_comment",
+        "create_pull_request",
+        "list_pull_requests",
+        "get_pull_request",
+        "merge_pull_request",
+        "list_branches",
+        "create_branch",
+        "list_commits",
+        "get_commit",
+        "create_release",
+        "list_releases",
+    },
+    "read:user": {"get_authenticated_user", "list_repositories_for_user"},
+    "user": {"get_authenticated_user", "list_repositories_for_user"},
+    "read:org": {"list_organization_repositories", "get_organization"},
+    "security_events": {
+        "get_code_scanning_alert",
+        "list_code_scanning_alerts",
+        "get_secret_scanning_alert",
+        "list_secret_scanning_alerts",
+    },
+    "gist": {"create_gist", "list_gists", "get_gist", "update_gist", "delete_gist"},
+}
+
+
+# These tools call GitHub's public search API which works with any valid token
+# regardless of which scopes it holds. They are always included.
+_ALWAYS_PERMITTED: set[str] = {
+    "search_repositories",
+    "search_code",
+    "search_issues",
+    "search_users",
+    "search_commits",
+}
+
+
 def build_agent() -> LlmAgent:
     """
     Constructs the ADK LlmAgent wired up to the GitHub MCP server.
