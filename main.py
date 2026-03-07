@@ -1,95 +1,391 @@
-from fastapi import FastAPI, Header, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+"""
+main.py — A2A-compatible FastAPI server for the GitHub Agent
+
+Exposes three endpoints:
+  GET  /.well-known/agent.json  →  A2A agent discovery (agent card)
+  POST /                        →  A2A JSON-RPC 2.0 task handler
+  GET  /health                  →  Kubernetes liveness / readiness probe
+
+The A2A protocol (https://google.github.io/A2A) is implemented manually here
+rather than through the a2a-sdk, keeping dependencies lean and the code fully
+transparent. Only `tasks/send` (synchronous execution) is implemented, which
+covers the vast majority of agent-to-agent use cases.
+"""
+
+import os, httpx, uuid, uvicorn, logging
 from pydantic import BaseModel
-import httpx, json, os
-from dotenv import load_dotenv
+from typing import Any
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types as genai_types
+from agent import build_agent
 
-# Load environment variables from a .env file (if one exists)
-load_dotenv()
 
-app = FastAPI(title="GitHub Agent")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
+log = logging.getLogger("github-agent")
 
-# Add the "Authorize" padlock button to the Swagger UI
-security = HTTPBearer()
-
-# Pointing directly to the Streamable HTTP endpoint
+# ── Configuration ──────────────────────────────────────────────────────────────
+# AGENT_HOST should be set to this service's cluster-internal URL so that
+# the agent card's `url` field is resolvable by other pods in the cluster.
+AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
+AGENT_VERSION = "1.0.3"
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
+GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 
 
-class ToolRequest(BaseModel):
-    tool_name: str
-    arguments: dict = {}
+# ── A2A request/response models ────────────────────────────────────────────────
+# Defining these as Pydantic models serves two purposes:
+#   1. FastAPI uses them to generate the Swagger UI form automatically
+#   2. Pydantic validates incoming data and gives clear errors for bad requests
+class A2AMessagePart(BaseModel):
+    type: str  # e.g. "text"
+    text: str | None = None  # present when type == "text"
 
 
-def parse_sse_response(response_text: str):
-    """Extracts the JSON payload from an SSE formatted response string."""
-    for line in response_text.splitlines():
-        if line.startswith("data: "):
-            return json.loads(line[6:])  # parse everything after 'data: '
+class A2AMessage(BaseModel):
+    role: str  # "user" or "agent"
+    parts: list[A2AMessagePart]
 
-    # Fallback if the server actually returned standard JSON
-    try:
-        return json.loads(response_text)
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=500, detail=f"Could not parse response: {response_text}"
+
+class A2ATaskParams(BaseModel):
+    id: str  # caller-chosen task ID
+    message: A2AMessage
+
+
+class A2ARequest(BaseModel):
+    jsonrpc: str = "2.0"
+    id: str  # caller-chosen RPC ID
+    method: str  # e.g. "tasks/send"
+    params: A2ATaskParams
+
+
+# ── ADK infrastructure ─────────────────────────────────────────────────────────
+# These are module-level singletons, created once when the container starts.
+# The Runner owns the agent and drives the tool-calling loop on each request.
+# InMemorySessionService is fine for replicas=1; for multi-replica deployments
+# you would swap this for a Redis-backed session store.
+_session_service = InMemorySessionService()
+_agent = build_agent()
+_runner = Runner(
+    agent=_agent,
+    app_name="github_agent",
+    session_service=_session_service,
+)
+
+# ── A2A Agent Card ─────────────────────────────────────────────────────────────
+# Served at GET /.well-known/agent.json per the A2A specification.
+# External agents or orchestrators fetch this first to understand what this
+# agent can do before sending it a task.
+AGENT_CARD = {
+    "name": "GitHub Agent",
+    "description": (
+        "Headless GitHub agent with full MCP toolset access. "
+        "Manages repos, issues, pull requests, files, branches, and more."
+    ),
+    "url": AGENT_HOST,
+    "version": AGENT_VERSION,
+    "capabilities": {
+        "streaming": False,  # SSE streaming not yet implemented
+        "pushNotifications": False,
+        "stateTransitionHistory": True,
+    },
+    "defaultInputModes": ["text/plain"],
+    "defaultOutputModes": ["text/plain"],
+    "skills": [
+        {
+            "id": "repo_management",
+            "name": "Repository Management",
+            "description": "Create, update, fork, and search GitHub repositories.",
+            "tags": ["github", "repository"],
+            "examples": [
+                "Create a new private repository called my-service",
+                "Search for repositories owned by user:alisterbaroi",
+            ],
+        },
+        {
+            "id": "issue_tracking",
+            "name": "Issue Tracking",
+            "description": "Create, update, list, and close GitHub issues.",
+            "tags": ["github", "issues"],
+            "examples": [
+                "List all open issues in alisterbaroi/github-agent",
+                "Create an issue titled 'Bug: 500 on login endpoint'",
+            ],
+        },
+        {
+            "id": "pull_requests",
+            "name": "Pull Request Management",
+            "description": "Create, review, list, and manage pull requests.",
+            "tags": ["github", "pull-requests"],
+            "examples": [
+                "List open PRs in alisterbaroi/github-agent",
+                "Get the diff for PR #12",
+            ],
+        },
+        {
+            "id": "code_operations",
+            "name": "Code & File Operations",
+            "description": "Read, create, update, and search files in repositories.",
+            "tags": ["github", "code", "files"],
+            "examples": [
+                "Read the contents of README.md from my repo",
+                "Search for TODO comments across the codebase",
+            ],
+        },
+    ],
+}
+
+# ── FastAPI app ────────────────────────────────────────────────────────────────
+app = FastAPI(title="GitHub Agent (A2A)", version=AGENT_VERSION)
+
+
+@app.get("/.well-known/agent.json", include_in_schema=False)
+async def get_agent_card():
+    """
+    A2A agent discovery endpoint.
+    Any agent or orchestrator wishing to communicate with us fetches this
+    endpoint first to understand our capabilities, skills, and call format.
+    """
+    return JSONResponse(content=AGENT_CARD)
+
+
+@app.post("/")
+# async def handle_task(request: Request):
+async def handle_task(body: A2ARequest):
+    """
+    A2A JSON-RPC 2.0 task endpoint.
+    Expected request shape for tasks/send:
+    {
+        "jsonrpc": "2.0",
+        "id":      "test-id-01",
+        "method":  "tasks/send",
+        "params": {
+            "id": "task-uuid-01",
+            "message": {
+                "role":  "user",
+                "parts": [{"type": "text", "text": "List open issues in my repo username/repo_name"}]
+            }
+        }
+    }
+    """
+    # body = await request.json()
+    # rpc_id = body.get("id", str(uuid.uuid4()))
+    # method = body.get("method", "")
+    # params = body.get("params", {})
+    rpc_id = body.id
+    method = body.method
+
+    log.info(f"A2A request  method={method}  rpc_id={rpc_id}")
+
+    if method == "tasks/send":
+        # return await _tasks_send(rpc_id, params)
+        return await _tasks_send(rpc_id, body.params.model_dump())
+
+    # Any unsupported JSON-RPC method returns the standard -32601 error code.
+    return _rpc_error(rpc_id, -32601, f"Method '{method}' not supported")
+
+
+# ── Internal helpers ───────────────────────────────────────────────────────────
+
+
+async def _tasks_send(rpc_id: str, params: dict) -> JSONResponse:
+    """
+    Core handler for tasks/send.
+
+    Creates an isolated ADK session for this task, runs the agent to
+    completion, and wraps the result in the A2A task response format.
+    """
+    task_id = params.get("id", str(uuid.uuid4()))
+    user_msg = params.get("message", {})
+    user_text = _extract_text(user_msg)
+
+    if not user_text:
+        return _rpc_error(
+            rpc_id, -32602, "Invalid params: message contained no text parts"
         )
 
+    # Each task gets its own session to prevent state from leaking between
+    # unrelated callers. For multi-turn conversations, persist this session_id
+    # and have the caller echo it back in subsequent tasks/send calls.
+    session_id = str(uuid.uuid4())
+    await _session_service.create_session(
+        app_name="github_agent",
+        user_id="a2a_caller",
+        session_id=session_id,
+    )
 
-@app.get("/tools")
-# async def list_tools(authorization: str = Header(None)):
-async def list_tools(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    # if not authorization:
-    # raise HTTPException(status_code=401, detail="Missing Authorization header")
-    # headers = {"Authorization": authorization, "Content-Type": "application/json"}
-    # HTTPBearer automatically extracts the token from the UI's padlock
-    headers = {
-        "Authorization": f"Bearer {credentials.credentials}",
-        "Content-Type": "application/json",
-    }
+    try:
+        agent_reply = await _run_agent(session_id, user_text)
+        log.info(f"Task {task_id} completed")
 
-    payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        return JSONResponse(
+            content={
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "id": task_id,
+                    "status": {"state": "completed"},
+                    # `artifacts` carries the agent's output back to the caller
+                    "artifacts": [
+                        {
+                            "name": "agent_response",
+                            "parts": [{"type": "text", "text": agent_reply}],
+                        }
+                    ],
+                    # Full conversation history so the caller can audit the exchange
+                    "history": [
+                        user_msg,
+                        {
+                            "role": "agent",
+                            "parts": [{"type": "text", "text": agent_reply}],
+                        },
+                    ],
+                },
+            }
+        )
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
-
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-
-        return parse_sse_response(response.text)
+    except Exception as exc:
+        log.error(f"Task {task_id} failed: {exc}", exc_info=True)
+        return _rpc_error(rpc_id, -32000, f"Agent execution error: {str(exc)}")
 
 
-@app.post("/run-tool")
-# async def run_github_tool(request: ToolRequest, authorization: str = Header(None)):
-async def run_github_tool(
-    request: ToolRequest, credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    # if not authorization:
-    #     raise HTTPException(status_code=401, detail="Missing Authorization header")
-    # headers = {"Authorization": authorization, "Content-Type": "application/json"}
-    headers = {
-        "Authorization": f"Bearer {credentials.credentials}",
-        "Content-Type": "application/json",
-    }
+async def _run_agent(session_id: str, user_text: str) -> str:
+    """
+    Drives the ADK Runner for one turn and returns the agent's final reply.
 
+    The Runner emits a stream of events internally: the LLM deciding to call
+    a tool, the tool executing against the MCP server, the result being fed
+    back to the LLM, and so on. We only capture the final text response, which
+    is marked by event.is_final_response() == True.
+    """
+    content = genai_types.Content(
+        role="user",
+        parts=[genai_types.Part.from_text(text=user_text)],
+    )
+
+    final_text = ""
+    async for event in _runner.run_async(
+        user_id="a2a_caller",
+        session_id=session_id,
+        new_message=content,
+    ):
+        # Skip intermediate events (tool calls, tool results, partial tokens)
+        if event.is_final_response() and event.content:
+            for part in event.content.parts:
+                if hasattr(part, "text") and part.text:
+                    final_text += part.text
+
+    return final_text or "Task completed (agent produced no text output)."
+
+
+def _extract_text(message: dict) -> str:
+    """Pulls the first text part from an A2A message dict."""
+    for part in message.get("parts", []):
+        if isinstance(part, dict) and part.get("type") == "text":
+            return part.get("text", "")
+    return ""
+
+
+def _rpc_error(rpc_id: str, code: int, message: str) -> JSONResponse:
+    """Builds a JSON-RPC 2.0 error response."""
+    return JSONResponse(
+        content={
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "error": {"code": code, "message": message},
+        }
+    )
+
+
+@app.get("/list_all_tools")
+async def list_all_tools():
+    """
+    Queries the GitHub MCP server directly for its full tool catalogue.
+
+    Rather than reconstructing the list from ADK's internal state, we go back
+    to the authoritative source — the MCP server itself — using a tools/list
+    JSON-RPC call. This guarantees the response is always current, even if the
+    MCP server adds or removes tools at runtime.
+
+    Each tool in the response includes its name, description, and input schema,
+    which tells you exactly what arguments it expects.
+    """
     payload = {
         "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {"name": request.tool_name, "arguments": request.arguments},
+        "id": "list-tools",
+        "method": "tools/list",
+        "params": {},
+    }
+    headers = {
+        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(
-        timeout=60.0
-    ) as client:  # Longer timeout for tool execution
-        response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
+            response.raise_for_status()
 
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
+        raw = response.text
 
-        return parse_sse_response(response.text)
+        # The MCP server responds with SSE-formatted text ("data: {...}"),
+        # so we reuse the same parsing logic as the original /tools endpoint.
+        parsed = _parse_mcp_response(raw)
+
+        tools = parsed.get("result", {}).get("tools", [])
+
+        # Return a clean summary so the output is easy to read at a glance,
+        # alongside the full schema for callers who need the argument details.
+        return {
+            "total": len(tools),
+            "tools": [
+                {
+                    "name": t.get("name"),
+                    "description": t.get("description"),
+                    "inputSchema": t.get("inputSchema"),
+                }
+                for t in tools
+            ],
+        }
+
+    except httpx.HTTPStatusError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": f"MCP server returned {exc.response.status_code}",
+                "detail": exc.response.text,
+            },
+        )
+    except Exception as exc:
+        log.error(f"list_all_tools failed: {exc}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+def _parse_mcp_response(text: str) -> dict:
+    """
+    Extracts the JSON payload from an SSE-formatted MCP response.
+    SSE responses prefix each data line with 'data: ', so we strip that
+    prefix and parse what remains. Falls back to plain JSON if needed.
+    """
+    import json
+
+    for line in text.splitlines():
+        if line.startswith("data: "):
+            return json.loads(line[6:])
+    return json.loads(text)  # fallback for plain JSON responses
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "message": "Agent is running"}
+    """Kubernetes liveness and readiness probe."""
+    return {
+        "status": "ok",
+        "message": "GitHub Agent is running",
+        "version": AGENT_VERSION,
+    }
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

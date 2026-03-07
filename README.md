@@ -27,10 +27,12 @@ export MCP_SECRET_NAME="github-mcp-secret"
 # Agent Variables
 export AGENT_NAME="github-custom-agent"
 export AGENT_SERVICE_NAME="github-custom-agent-service"
+export AGENT_SECRET_NAME="github-agent-secret"
 export AGENT_IMAGE="github-agent:latest"
 
-# GitHub Personal Access Token
-export GITHUB_PAT="<your-access-token-here>" # << Set your access token here
+# API Keys & Token
+export GITHUB_PAT="<github-access-token-here>"  # << Set github access token here
+export GEMINI_API_KEY="<gemini-api-key-here>"   # << Set gemini api key here
 ```
 
 ### 2. Create the Cluster & Namespace
@@ -41,10 +43,14 @@ kubectl create namespace ${NAMESPACE}
 ```
 
 ### 3. Deploy the Secret to the Cluster
-Securely store your GitHub PAT in Kubernetes as a Secret so the MCP server can access it:
+Securely store your GitHub PAT & Gemini API key to Kubernetes as a Secret so the MCP server & agent can access it:
 ```bash
 kubectl create secret generic ${MCP_SECRET_NAME} \
   --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PAT} \
+  --namespace ${NAMESPACE}
+
+kubectl create secret generic ${AGENT_SECRET_NAME} \
+  --from-literal=GOOGLE_API_KEY=${GEMINI_API_KEY} \
   --namespace ${NAMESPACE}
 ```
 
@@ -83,7 +89,46 @@ kubectl port-forward service/${AGENT_SERVICE_NAME} 8000:80 -n ${NAMESPACE}
 <!-- kubectl port-forward service/github-custom-agent-service 8000:80 -n $NAMESPACE -->
 
 **In Terminal 2 (Run your tests):**
-Ping the `/tools` endpoint to verify the agent can successfully retrieve the toolset from the MCP server:
+Fetch the agent card (discovery):
+```bash
+curl http://localhost:8000/.well-known/agent.json
+```
+Send a task (A2A tasks/send):
+```bash
+curl -X POST http://localhost:8000/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "test-001",
+    "method": "tasks/send",
+    "params": {
+      "id": "task-001",
+      "message": {
+        "role": "user",
+        "parts": [{"type": "text", "text": "List all repositories of user:alisterbaroi"}]
+      }
+    }
+  }'
+```
+
+Call from another pod in the same cluster (A2A inter-agent):
+```bash
+curl -X POST http://github-custom-agent-service.github-mcp.svc.cluster.local/
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "test-001",
+    "method": "tasks/send",
+    "params": {
+      "id": "task-001",
+      "message": {
+        "role": "user",
+        "parts": [{"type": "text", "text": "List all repositories of user:alisterbaroi"}]
+      }
+    }
+  }'
+```
+<!-- Ping the `/tools` endpoint to verify the agent can successfully retrieve the toolset from the MCP server:
 ```bash
 curl -X GET http://localhost:8000/tools \
   -H "Authorization: Bearer ${GITHUB_PAT}"
@@ -115,7 +160,7 @@ curl -X POST http://localhost:8000/run-tool \
         "query": "user:alisterbaroi github-agent"
     }
   }'
-```
+``` -->
 
 For testing via UI & API documentations, visit: 
 - [localhost:8000/docs](http://localhost:8000/docs)

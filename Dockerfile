@@ -4,12 +4,13 @@ FROM python:3.12-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy dependencies and install them
+# Copy dependencies & install them
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your FastAPI agent code
+# Copy your FastAPI agent code files
 COPY main.py .
+COPY agent.py .
 
 # Expose the port Uvicorn runs on
 EXPOSE 8000

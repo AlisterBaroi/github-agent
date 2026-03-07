@@ -22,6 +22,32 @@ spec:
         # Route directly to the internal Kubernetes service name
         - name: MCP_SERVER_URL
           value: "http://${MCP_SERVICE_NAME}:80/mcp"
+        # The agent's own cluster-internal URL — used in the A2A agent card so that other pods know where to send tasks
+        - name: AGENT_HOST
+          value: "http://${AGENT_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local"
+        # Reuse the GitHub PAT already stored in the MCP server's secret
+        - name: GITHUB_PAT
+          valueFrom:
+            secretKeyRef:
+              name: ${MCP_SECRET_NAME}
+              key: GITHUB_PERSONAL_ACCESS_TOKEN
+        # LLM API key (Google Gemini by default)
+        # Create with: kubectl create secret generic ${AGENT_SECRET_NAME} \ 
+        #   --from-literal=GOOGLE_API_KEY=<key> -n ${NAMESPACE}
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ${AGENT_SECRET_NAME}
+              key: GOOGLE_API_KEY
+        # Optional: switch to Claude by setting these two env vars instead
+        # - name: AGENT_MODEL
+        #   value: "anthropic/claude-sonnet-4-5"
+        # - name: ANTHROPIC_API_KEY
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: ${AGENT_SECRET_NAME}
+        #       key: ANTHROPIC_API_KEY
+
         ports:
         - containerPort: 8000
 ---
