@@ -1,14 +1,3 @@
-# from google.adk.agents.llm_agent import Agent
-# import os
-
-# root_agent = Agent(
-#     model=os.getenv("AGENT_MODEL", "gemini-2.0-flash"),
-#     name="root_agent",
-#     description="A helpful assistant for user questions.",
-#     instruction="Answer user questions to the best of your knowledge",
-# )
-
-
 """
 agent.py — ADK agent definition
 
@@ -19,19 +8,17 @@ the LLM can call them during its reasoning loop.
 """
 
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import (
     MCPToolset,
     StreamableHTTPConnectionParams,
 )
 
-# ── Runtime config ─────────────────────────────────────────────────────────────
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
-GITHUB_PAT = os.getenv("GITHUB_PAT", "")
-
-# Defaults to Gemini 2.0 Flash. To use Claude instead, set:
-#   AGENT_MODEL=anthropic/claude-sonnet-4-5   and   ANTHROPIC_API_KEY=...
-MODEL = os.getenv("AGENT_MODEL", "gemini-2.5-flash")
+# Load .env file from root
+_root_env = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=_root_env, override=False)
 
 
 def build_agent() -> LlmAgent:
@@ -46,16 +33,15 @@ def build_agent() -> LlmAgent:
     toolset = MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
             url=os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp"),
-            headers={"Authorization": f"Bearer {GITHUB_PAT}"},
+            headers={"Authorization": f"Bearer {os.getenv("GITHUB_PAT")}"},
         )
     )
 
     return LlmAgent(
         name="github_agent",
-        model=MODEL,
+        model=os.getenv("AGENT_MODEL", "gemini-2.5-flash"),
         description=(
-            "Headless GitHub agent with full access to GitHub operations "
-            "via the official GitHub MCP server."
+            "Headless GitHub agent with full access to GitHub operations via the official GitHub MCP server."
         ),
         instruction="""You are a skilled GitHub automation agent.
 

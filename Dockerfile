@@ -20,6 +20,3 @@ RUN chmod +x start.sh
 # Run start.sh to launch both processes in parallel & then monitor.
 # If either crashes, the script exits and Kubernetes restarts the pod.
 CMD ["./start.sh"]
-
-# Command to run the application
-# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
