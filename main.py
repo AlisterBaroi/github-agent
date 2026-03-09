@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
-from agent import build_agent
+from gh_agent.agent import build_agent
 from tools_catalogue import tools_router
 
 
@@ -30,8 +30,21 @@ log = logging.getLogger("github-agent")
 # ── Configuration ──────────────────────────────────────────────────────────────
 # AGENT_HOST should be set to this service's cluster-internal URL so that
 # the agent card's `url` field is resolvable by other pods in the cluster.
-AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
-AGENT_VERSION = "1.0.5"
+# AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.0")
+
+# ── ADK infrastructure ─────────────────────────────────────────────────────────
+# These are module-level singletons, created once when the container starts.
+# The Runner owns the agent and drives the tool-calling loop on each request.
+# InMemorySessionService is fine for replicas=1; for multi-replica deployments
+# you would swap this for a Redis-backed session store.
+_session_service = InMemorySessionService()
+_agent = build_agent()
+_runner = Runner(
+    agent=_agent,
+    app_name="github_agent",
+    session_service=_session_service,
+)
 
 
 # ── A2A request/response models ────────────────────────────────────────────────
@@ -60,19 +73,6 @@ class A2ARequest(BaseModel):
     params: A2ATaskParams
 
 
-# ── ADK infrastructure ─────────────────────────────────────────────────────────
-# These are module-level singletons, created once when the container starts.
-# The Runner owns the agent and drives the tool-calling loop on each request.
-# InMemorySessionService is fine for replicas=1; for multi-replica deployments
-# you would swap this for a Redis-backed session store.
-_session_service = InMemorySessionService()
-_agent = build_agent()
-_runner = Runner(
-    agent=_agent,
-    app_name="github_agent",
-    session_service=_session_service,
-)
-
 # ── A2A Agent Card ─────────────────────────────────────────────────────────────
 # Served at GET /.well-known/agent.json per the A2A specification.
 # External agents or orchestrators fetch this first to understand what this
@@ -83,7 +83,7 @@ AGENT_CARD = {
         "Headless GitHub agent with full MCP toolset access. "
         "Manages repos, issues, pull requests, files, branches, and more."
     ),
-    "url": AGENT_HOST,
+    "url": os.getenv("AGENT_HOST", "http://localhost:8000"),
     "version": AGENT_VERSION,
     "capabilities": {
         "streaming": False,  # SSE streaming not yet implemented

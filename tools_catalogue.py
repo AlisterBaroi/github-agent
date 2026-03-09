@@ -21,8 +21,8 @@ log = logging.getLogger("github-agent")
 # ── Runtime config (read from the same env vars as main.py) ───────────────────
 # Each module reads the env vars it needs independently. This is intentional —
 # Python modules have isolated namespaces, so variables don't leak across files.
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
-GITHUB_PAT = os.getenv("GITHUB_PAT", "")
+# MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
+# GITHUB_PAT = os.getenv("GITHUB_PAT")
 
 
 # ── GitHub OAuth scope → MCP tool permission map ──────────────────────────────
@@ -145,7 +145,7 @@ async def list_all_tools():
     fall back to a lightweight read probe and flag the result accordingly.
     """
     mcp_headers = {
-        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Authorization": f"Bearer {os.getenv("GITHUB_PAT")}",
         "Content-Type": "application/json",
     }
     mcp_payload = {
@@ -159,7 +159,9 @@ async def list_all_tools():
         # ── Step 1: fetch every tool the MCP server currently offers ──────────
         async with httpx.AsyncClient(timeout=15.0) as client:
             mcp_resp = await client.post(
-                MCP_SERVER_URL, json=mcp_payload, headers=mcp_headers
+                os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp"),
+                json=mcp_payload,
+                headers=mcp_headers,
             )
             mcp_resp.raise_for_status()
 
@@ -250,7 +252,7 @@ async def _resolve_pat_permissions(all_tool_names: set[str]) -> dict:
     repo tool set conservatively, and attach a warning to the response.
     """
     gh_headers = {
-        "Authorization": f"Bearer {GITHUB_PAT}",
+        "Authorization": f"Bearer {os.getenv("GITHUB_PAT")}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
