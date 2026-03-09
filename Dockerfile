@@ -8,16 +8,18 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your FastAPI agent code files
-# COPY agent.py .
-# COPY tools_catalogue.py .
-# COPY main.py .
+# Copy source files
 COPY . .
 
+# Expose ports 8000 (FastAPI) & 8001 (ADK Web UI)
+EXPOSE 8000 8001
 
-# Expose the port Uvicorn runs on
-EXPOSE 8000
+# Make the startup script executable
+RUN chmod +x start.sh
+
+# Run start.sh to launch both processes in parallel & then monitor.
+# If either crashes, the script exits and Kubernetes restarts the pod.
+CMD ["./start.sh"]
 
 # Command to run the application
 # CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-CMD ["adk", "web", "--host", "0.0.0.0", "--port", "8001"]
