@@ -1,3 +1,14 @@
+# from google.adk.agents.llm_agent import Agent
+# import os
+
+# root_agent = Agent(
+#     model=os.getenv("AGENT_MODEL", "gemini-2.0-flash"),
+#     name="root_agent",
+#     description="A helpful assistant for user questions.",
+#     instruction="Answer user questions to the best of your knowledge",
+# )
+
+
 """
 agent.py — ADK agent definition
 
