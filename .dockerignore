@@ -1,0 +1,37 @@
+# ── Kubernetes deployment manifests ───────────────────────────────────────────────────────
+github-agent-deployment.yaml
+github-mcp-server-deployment.yaml
+
+# ── Documentation ──────────────────────────────────────────────────────────────
+README.md
+*.md
+
+# ── Environment files ──────────────────────────────────────────────────────────
+.env
+.env.example
+gh_agent/.env
+gh_agent/.env.example
+
+# ── Python cache ───────────────────────────────────────────────────────────────
+*.py[cod]
+*.pyo
+.mypy_cache/
+.ruff_cache/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── ADK local state ────────────────────────────────────────────────────────────
+.adk/
+
+# ── Version control ────────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── IDE and OS noise ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store

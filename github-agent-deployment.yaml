@@ -17,7 +17,7 @@ spec:
       containers:
       - name: agent
         image: ${AGENT_IMAGE}
-        imagePullPolicy: Never # Forces K8s to use local image that's loaded
+        imagePullPolicy: Never # Force K8s to use local image that's loaded
         env:
         # Route directly to the internal Kubernetes service name
         - name: MCP_SERVER_URL
@@ -49,8 +49,28 @@ spec:
         #       key: ANTHROPIC_API_KEY
 
         ports:
-        - containerPort: 8000
+        - name: fastapi    # FastAPI
+          containerPort: 8000
+        - name: adk-web   # ADK Web UI
+          containerPort: 8001
+
+        # Kubernetes uses /health on the FastAPI port to decide if the pod is ready to receive traffic. 
+        # The ADK web UI has no health endpoint.
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+
 ---
+#  Service for FastAPI — used for A2A inter-agent communication inside the cluster
 apiVersion: v1
 kind: Service
 metadata:
@@ -59,6 +79,22 @@ spec:
   selector:
     app: ${AGENT_NAME}
   ports:
-    - protocol: TCP
+    - name: fastapi
+      protocol: TCP
       port: 80
       targetPort: 8000
+---
+# Separate service for the ADK Web UI.
+# Not needed for production traffic; other agents always talk to the FastAPI service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${AGENT_SERVICE_NAME}-adk
+spec:
+  selector:
+    app: ${AGENT_NAME}
+  ports:
+  - name: adk-web
+    protocol: TCP
+    port: 8001
+    targetPort: 8001

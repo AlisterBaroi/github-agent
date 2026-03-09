@@ -74,3 +74,6 @@ Guidelines:
 """,
         tools=[toolset],
     )
+
+
+root_agent = build_agent()
