@@ -13,10 +13,11 @@ covers the vast majority of agent-to-agent use cases.
 """
 
 # from typing import Any
-import os, json, httpx, uuid, uvicorn, logging
+import os, uuid, uvicorn, logging
 from pydantic import BaseModel
 from fastapi import FastAPI  # ,Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
@@ -31,7 +32,7 @@ log = logging.getLogger("github-agent")
 # AGENT_HOST should be set to this service's cluster-internal URL so that
 # the agent card's `url` field is resolvable by other pods in the cluster.
 # AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
-AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.0")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.7")
 
 # ── ADK infrastructure ─────────────────────────────────────────────────────────
 # These are module-level singletons, created once when the container starts.
@@ -138,6 +139,16 @@ AGENT_CARD = {
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 app = FastAPI(title="GitHub Agent (A2A)", version=AGENT_VERSION)
+
+
+# Add this immediately after app = FastAPI(...):
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten to ["http://localhost:8080"] if preferred
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/.well-known/agent.json", include_in_schema=False)
