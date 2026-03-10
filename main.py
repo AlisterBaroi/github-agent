@@ -208,7 +208,7 @@ async def handle_a2a_task(body: A2ARequest):
             "id": "task-uuid-01",
             "message": {
                 "role":  "user",
-                "parts": [{"type": "text", "message": "List open issues in my repo username/repo_name"}]
+                "parts": [{"type": "text", "text": "List open issues in my repo username/repo_name"}]
             }
         }
     }

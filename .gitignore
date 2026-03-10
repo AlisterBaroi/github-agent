@@ -5,6 +5,7 @@ __pycache__/
 
 github-agent-deployment(copy).yaml
 agent(copy).py
+DEPLOY_TO_TAG.md
 
 # C extensions
 *.so
