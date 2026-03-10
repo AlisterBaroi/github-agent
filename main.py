@@ -32,7 +32,7 @@ log = logging.getLogger("github-agent")
 # AGENT_HOST should be set to this service's cluster-internal URL so that
 # the agent card's `url` field is resolvable by other pods in the cluster.
 # AGENT_HOST = os.getenv("AGENT_HOST", "http://localhost:8000")
-AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.7")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.8")
 
 # ── ADK infrastructure ─────────────────────────────────────────────────────────
 # These are module-level singletons, created once when the container starts.
@@ -72,6 +72,12 @@ class A2ARequest(BaseModel):
     id: str  # caller-chosen RPC ID
     method: str  # e.g. "tasks/send"
     params: A2ATaskParams
+
+
+class PromptRequest(BaseModel):
+    """Simple single-field input — the only thing callers need to send."""
+
+    prompt: str
 
 
 # ── A2A Agent Card ─────────────────────────────────────────────────────────────
@@ -161,13 +167,39 @@ async def get_agent_card():
     return JSONResponse(content=AGENT_CARD)
 
 
-@app.post("/")
+@app.post("/", summary="Run a task", response_description="Agent reply")
+async def handle_task(body: PromptRequest):
+    """
+    Send a plain-English prompt to the GitHub agent.
+
+    ```json
+    {"prompt": "List all open issues in alisterbaroi/github-agent"}
+    ```
+    """
+    log.info(f"Prompt request: {body.prompt!r}")
+
+    session_id = str(uuid.uuid4())
+    await _session_service.create_session(
+        app_name="github_agent",
+        user_id="a2a_caller",
+        session_id=session_id,
+    )
+
+    try:
+        reply = await _run_agent(session_id, body.prompt)
+        return {"reply": reply}
+    except Exception as exc:
+        log.error(f"Agent error: {exc}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@app.post("/a2a", summary="A2A JSON-RPC 2.0 (legacy)")
 # async def handle_task(request: Request):
-async def handle_task(body: A2ARequest):
+async def handle_a2a_task(body: A2ARequest):
     """
     A2A JSON-RPC 2.0 task endpoint.
     Expected request shape for tasks/send:
-
+    ```json
     {
         "jsonrpc": "2.0",
         "id":      "test-id-01",
@@ -180,22 +212,18 @@ async def handle_task(body: A2ARequest):
             }
         }
     }
+    ```
     """
-    # body = await request.json()
-    # rpc_id = body.get("id", str(uuid.uuid4()))
-    # method = body.get("method", "")
-    # params = body.get("params", {})
-    rpc_id = body.id
-    method = body.method
+    # rpc_id = body.id
+    # method = body.method
 
-    log.info(f"A2A request  method={method}  rpc_id={rpc_id}")
+    log.info(f"A2A request  method={body.method}  rpc_id={body.rpc_id}")
 
-    if method == "tasks/send":
-        # return await _tasks_send(rpc_id, params)
-        return await _tasks_send(rpc_id, body.params.model_dump())
+    if body.method == "tasks/send":
+        return await _tasks_send(body.rpc_id, body.params.model_dump())
 
     # Any unsupported JSON-RPC method returns the standard -32601 error code.
-    return _rpc_error(rpc_id, -32601, f"Method '{method}' not supported")
+    return _rpc_error(body.rpc_id, -32601, f"Method '{body.method}' not supported")
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
