@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+github-agent-deployment(copy).yaml
+agent(copy).py
+
 # C extensions
 *.so
 

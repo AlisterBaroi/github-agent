@@ -74,10 +74,10 @@ class A2ARequest(BaseModel):
     params: A2ATaskParams
 
 
-class PromptRequest(BaseModel):
+class MessageRequest(BaseModel):
     """Simple single-field input — the only thing callers need to send."""
 
-    prompt: str
+    message: str
 
 
 # ── A2A Agent Card ─────────────────────────────────────────────────────────────
@@ -168,15 +168,15 @@ async def get_agent_card():
 
 
 @app.post("/", summary="Run a task", response_description="Agent reply")
-async def handle_task(body: PromptRequest):
+async def handle_task(body: MessageRequest):
     """
-    Send a plain-English prompt to the GitHub agent.
+    Send a plain-English message to the GitHub agent.
 
     ```json
-    {"prompt": "List all open issues in alisterbaroi/github-agent"}
+    {"message": "List all open issues in alisterbaroi/github-agent"}
     ```
     """
-    log.info(f"Prompt request: {body.prompt!r}")
+    log.info(f"message request: {body.message!r}")
 
     session_id = str(uuid.uuid4())
     await _session_service.create_session(
@@ -186,7 +186,7 @@ async def handle_task(body: PromptRequest):
     )
 
     try:
-        reply = await _run_agent(session_id, body.prompt)
+        reply = await _run_agent(session_id, body.message)
         return {"reply": reply}
     except Exception as exc:
         log.error(f"Agent error: {exc}", exc_info=True)
@@ -208,7 +208,7 @@ async def handle_a2a_task(body: A2ARequest):
             "id": "task-uuid-01",
             "message": {
                 "role":  "user",
-                "parts": [{"type": "text", "text": "List open issues in my repo username/repo_name"}]
+                "parts": [{"type": "text", "message": "List open issues in my repo username/repo_name"}]
             }
         }
     }
@@ -217,13 +217,13 @@ async def handle_a2a_task(body: A2ARequest):
     # rpc_id = body.id
     # method = body.method
 
-    log.info(f"A2A request  method={body.method}  rpc_id={body.rpc_id}")
+    log.info(f"A2A request  method={body.method}  rpc_id={body.id}")
 
     if body.method == "tasks/send":
-        return await _tasks_send(body.rpc_id, body.params.model_dump())
+        return await _tasks_send(body.id, body.params.model_dump())
 
     # Any unsupported JSON-RPC method returns the standard -32601 error code.
-    return _rpc_error(body.rpc_id, -32601, f"Method '{body.method}' not supported")
+    return _rpc_error(body.id, -32601, f"Method '{body.method}' not supported")
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
