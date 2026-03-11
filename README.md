@@ -49,6 +49,12 @@ Follow these steps to create a fine-grained GitHub PAT with the required permiss
    ```
    If successful, it will return your user profile JSON.
 
+7. **Token Expiration & Rotation**
+   - Set a calendar reminder before your token expires
+   - Create a new token before the old one expires
+   - Update your Kubernetes secret: `kubectl delete secret github-mcp-secret -n github-mcp && kubectl create secret generic github-mcp-secret --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=<new-token> -n github-mcp`
+   - Restart the pods: `kubectl rollout restart deployment github-mcp-server -n github-mcp`
+
 > [!NOTE]
 > Make sure to copy the `.env.example` file, rename as `.env` and paste in the GitHub PAT for the `GITHUB_PAT` value. 
 
