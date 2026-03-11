@@ -1,3 +1,4 @@
+# Manifest to deploy GitHub's Official MCP Server to a local Kubernetes cluster
 apiVersion: apps/v1
 kind: Deployment
 metadata:

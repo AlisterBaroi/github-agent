@@ -9,6 +9,7 @@ agent(copy).py
 DEPLOY_TO.md
 .adk/
 *.txt
+.claude
 
 # C extensions
 *.so

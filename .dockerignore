@@ -17,10 +17,11 @@ README.md
 .ruff_cache/
 
 # Virtual environments
+.env/
 .venv/
-.env*
-venv/
+.ENV/
 env/
+venv/
 ENV/
 
 # ADK local state
