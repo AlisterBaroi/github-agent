@@ -18,6 +18,7 @@ README.md
 
 # Virtual environments
 .venv/
+.env*
 venv/
 env/
 ENV/
