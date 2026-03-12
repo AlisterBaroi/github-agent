@@ -1,5 +1,5 @@
 # GitHub Agent & MCP Server for k8s
-This project is a headless, FastAPI-based, A2A-native custom agent that dynamically communicates with the official GitHub Model Context Protocol (MCP) server. Both the agent and the MCP server are designed to be deployed and self-hosted side-by-side within a Kubernetes cluster.
+This project is a headless, FastAPI-based, A2A-native custom agent that dynamically communicates with the official GitHub Model Context Protocol (MCP) server. Both the agent and the MCP server are designed to for self-hosted deployment, side-by-side within a Kubernetes cluster.
 
 ## Prerequisites
 Before you begin, ensure you have the following installed on your machine:
@@ -183,4 +183,4 @@ When you are finished testing, you can tear down the entire `kind` cluster to fr
 ```bash
 kind delete cluster --name ${CLUSTER_NAME}
 ```
-Optionally, also delete thge GitHub PAT from your GitHub settings.
+Optionally, also delete the GitHub PAT from your GitHub settings.
