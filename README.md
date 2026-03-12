@@ -10,7 +10,7 @@ Before you begin, ensure you have the following installed on your machine:
 
 
 <details>
-<summary><h3>How to Create a GitHub Personal Access Token (PAT)<h3></summary>
+<summary style='color:lawngreen;'><h3>How to Create a GitHub PAT (Expand to read)<h3></summary>
 
 > Follow these steps to create a fine-grained GitHub PAT with the required permissions:
 >
