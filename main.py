@@ -30,7 +30,7 @@ from tools_catalogue import tools_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 log = logging.getLogger("github-agent")
-AGENT_VERSION = os.getenv("AGENT_VERSION")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.9")
 
 # ── ADK infrastructure: Module-level singletons, created once when the container starts
 _agent = build_agent()
