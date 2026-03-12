@@ -52,13 +52,13 @@ Before you begin, ensure you have the following installed on your machine:
 >   - Set a calendar reminder before your token expires
 >   - Create a new token before the old one expires
 >   - Update your Kubernetes secret: 
-> ```bash
-> kubectl delete secret github-mcp-secret -n github-mcp && kubectl create secret generic github-mcp-secret --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=<new-token> -n github-mcp
-> ```
+>   ```bash
+>   kubectl delete secret github-mcp-secret -n github-mcp && kubectl create secret generic github-mcp-secret --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=<new-token> -n github-mcp
+>   ```
 >   - Restart the pods: 
-> ```bash
-> kubectl rollout restart deployment github-mcp-server -n github-mcp
-> ```
+>   ```bash
+>   kubectl rollout restart deployment github-mcp-server -n github-mcp
+>   ```
 > </details>
 
 > [!WARNING] 
