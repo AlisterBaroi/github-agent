@@ -44,7 +44,7 @@ Before you begin, ensure you have the following installed on your machine:
 > [!WARNING] 
 > Never commit your PAT to git repositories! Always use environment variables or secrets managers.
 
-> [!TIPS]
+> [!TIP]
 > Urgent info that needs immediate user attention to avoid problems.
 
 > 6. **Test Your Token**
