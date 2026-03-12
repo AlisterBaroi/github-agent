@@ -10,7 +10,7 @@ Before you begin, ensure you have the following installed on your machine:
 
 
 <details>
-<summary style='color:#7cfc00 !important;'><h3>How to Create a GitHub PAT (Expand to read)<h3></summary>
+<summary><h3 style='color:#7cfc00 !important;'>How to Create a GitHub PAT (Expand to read)<h3></summary>
 
 > Follow these steps to create a fine-grained GitHub PAT with the required permissions:
 >
