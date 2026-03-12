@@ -75,6 +75,7 @@ Set up the necessary environment variables, including your GitHub Personal Acces
 # Cluster Variables
 export CLUSTER_NAME="mcp-cluster"
 export NAMESPACE="github-mcp"
+export DEV_MODE="false" # set true for development
 
 # MCP Server Variables
 export MCP_SERVER_NAME="github-mcp-server"
