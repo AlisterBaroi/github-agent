@@ -32,7 +32,7 @@ def build_agent() -> LlmAgent:
     """
     toolset = MCPToolset(
         connection_params=StreamableHTTPConnectionParams(
-            url=os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp"),
+            url=os.getenv("MCP_SERVER_URL", "http://localhost:8082/mcp"),
             headers={"Authorization": f"Bearer {os.getenv("GITHUB_PAT")}"},
         )
     )

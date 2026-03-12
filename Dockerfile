@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source files
 COPY . .
 
+# List all files in container
+RUN ls -a
+
 # Expose ports 8000 (FastAPI) & 8001 (ADK Web UI)
 EXPOSE 8000 8001
 

@@ -3,10 +3,16 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Custom gitignores
+github-agent-deployment(copy-old).yaml
+agent(copy).py
+DEPLOY_TO.md
+.adk/
+*.txt
+.claude
+
 # C extensions
 *.so
-
-.adk/
 
 # Distribution / packaging
 .Python
@@ -151,6 +157,7 @@ activemq-data/
 
 # Environments
 .env
+.env*
 .envrc
 .venv
 env/
@@ -158,6 +165,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
 
 # Spyder project settings
 .spyderproject
