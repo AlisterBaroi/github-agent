@@ -8,52 +8,56 @@ Before you begin, ensure you have the following installed on your machine:
 * [kubectl](https://kubernetes.io/docs/tasks/tools/) — Kubernetes command-line tool
 * [GitHub Personal Access Token (PAT)](https://github.com/settings/personal-access-tokens) — A fine-grained PAT with read/write access to the repositories you want to manage. [Learn more](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
-### How to Create a GitHub Personal Access Token (PAT)
 
-Follow these steps to create a fine-grained GitHub PAT with the required permissions:
+<details>
+<summary><h3>How to Create a GitHub Personal Access Token (PAT)<h3></summary>
 
-1. **Go to GitHub PAT Settings**
-   - Navigate to [GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/personal-access-tokens)
-   - Click **"Generate new token"** (select "Fine-grained token")
-
-2. **Configure Token Settings**
-   - **Name**: Enter a descriptive name (e.g., "github-mcp-agent")
-   - **Expiration**: Choose your preferred expiration period (e.g., 90 days)
-   - **Owner**: Select your account
-
-3. **Set Repository Access**
-   - Choose **"Only select repositories"** and select the repositories you want to manage
-   - OR choose **"All repositories"** if you want access to all your repos
-
-4. **Configure Permissions**
-   Under "Repository permissions", enable:
-   - **Contents**: Read and write (required for file operations)
-   - **Metadata**: Read only (required for repository info)
-   - **Pull requests**: Read and write (optional, for PR operations)
-
-   Under "Account permissions", enable:
-   - **Organization administration**: Read only (if working with orgs)
-
-5. **Generate and Copy**
-   - Click **"Generate token"**
-   - **Important**: Copy the token immediately - you won't see it again!
-   - Store it securely (use a password manager or Kubernetes secrets)
-
+> Follow these steps to create a fine-grained GitHub PAT with the required permissions:
+>
+> 1. **Go to GitHub PAT Settings**
+>    - Navigate to [GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/personal-access-tokens)
+>    - Click **"Generate new token"** (select "Fine-grained token")
+> 
+> 2. **Configure Token Settings**
+>    - **Name**: Enter a descriptive name (e.g., "github-mcp-agent")
+>    - **Expiration**: Choose your preferred expiration period (e.g., 90 days)
+>    - **Owner**: Select your account
+> 
+> 3. **Set Repository Access**
+>    - Choose **"Only select repositories"** and select the repositories you want to manage
+>    - OR choose **"All repositories"** if you want access to all your repos
+> 
+> 4. **Configure Permissions**
+>    Under "Repository permissions", enable:
+>    - **Contents**: Read and write (required for file operations)
+>    - **Metadata**: Read only (required for repository info)
+>    - **Pull requests**: Read and write (optional, for PR operations)
+> 
+>    Under "Account permissions", enable:
+>    - **Organization administration**: Read only (if working with orgs)
+> 
+> 5. **Generate and Copy**
+>    - Click **"Generate token"**
+>    - **Important**: Copy the token immediately - you won't see it again!
+>    - Store it securely (use a password manager or Kubernetes secrets)
+> 
 > [!WARNING]
 > Never commit your PAT to git repositories! Always use environment variables or secrets managers.
+> 
+> 6. **Test Your Token**
+>    ```bash
+>    curl -H "Authorization: Bearer <YOUR_PAT>" \
+>      https://api.github.com/user
+>    ```
+>    If successful, it will return your user profile JSON.
+> 
+> 7. **Token Expiration & Rotation**
+>   - Set a calendar reminder before your token expires
+>   - Create a new token before the old one expires
+>   - Update your Kubernetes secret: `kubectl delete secret github-mcp-secret -n github-mcp && kubectl create secret generic github-mcp-secret --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=<new-token> -n github-mcp`
+>   - Restart the pods: `kubectl rollout restart deployment github-mcp-server -n github-mcp`
+></details>
 
-6. **Test Your Token**
-   ```bash
-   curl -H "Authorization: Bearer <YOUR_PAT>" \
-     https://api.github.com/user
-   ```
-   If successful, it will return your user profile JSON.
-
-7. **Token Expiration & Rotation**
-   - Set a calendar reminder before your token expires
-   - Create a new token before the old one expires
-   - Update your Kubernetes secret: `kubectl delete secret github-mcp-secret -n github-mcp && kubectl create secret generic github-mcp-secret --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=<new-token> -n github-mcp`
-   - Restart the pods: `kubectl rollout restart deployment github-mcp-server -n github-mcp`
 
 > [!NOTE]
 > Make sure to copy the `.env.example` file, rename as `.env` and paste in the GitHub PAT for the `GITHUB_PAT` value. 
