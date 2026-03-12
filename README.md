@@ -40,13 +40,6 @@ Before you begin, ensure you have the following installed on your machine:
 >    - Click **"Generate token"**
 >    - **Important**: Copy the token immediately - you won't see it again!
 >    - Store it securely (use a password manager or Kubernetes secrets)
- 
-> [!WARNING] 
-> Never commit your PAT to git repositories! Always use environment variables or secrets managers.
-
-> [!TIP]
-> Urgent info that needs immediate user attention to avoid problems.
-
 > 6. **Test Your Token**
 >    ```bash
 >    curl -H "Authorization: Bearer <YOUR_PAT>" \
@@ -61,6 +54,8 @@ Before you begin, ensure you have the following installed on your machine:
 >   - Restart the pods: `kubectl rollout restart deployment github-mcp-server -n github-mcp`
 ></details>
 
+> [!WARNING] 
+> Never commit your PAT to git repositories! Always use environment variables or secrets managers.
 
 > [!NOTE]
 > Make sure to copy the `.env.example` file, rename as `.env` and paste in the GitHub PAT for the `GITHUB_PAT` value. 
