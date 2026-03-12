@@ -57,7 +57,7 @@ Before you begin, ensure you have the following installed on your machine:
 >     ```
 >   - Restart the pods: 
 >     ```bash
->     kubectl rollout restart deployment github-mcp-server -n github-mcp
+>     kubectl rollout restart deployment <MCP_SERVER_NAME> -n <NAMESPACE>
 >     ```
 > </details>
 
@@ -87,8 +87,8 @@ export AGENT_SECRET_NAME="github-agent-secret"
 export AGENT_IMAGE="github-agent:latest"
 
 # API Keys & Token
-export GITHUB_PAT="<github-access-token-here>"  # << Set github access token here
-export GEMINI_API_KEY="<gemini-api-key-here>"   # << Set gemini api key here
+export GITHUB_PAT="<github-access-token-here>"  # << Set github PAT here
+export GEMINI_API_KEY="<gemini-api-key-here>"   # << Set gemini api-key here
 ```
 
 ### 2. Create the Cluster & Namespace
@@ -120,18 +120,18 @@ envsubst < github-mcp-server-deployment.yaml | kubectl apply -n ${NAMESPACE} -f 
 ### 5. Build and Deploy the Custom Agent
 Because the agent uses a custom Python image, you need to build it locally and load it into your `kind` cluster before deploying using its kubernetes deployment and service manifests file.
 ```bash
-# Build the Docker image locally
+# Build the Docker image for agent locally
 docker build -t ${AGENT_IMAGE} .
 
-# Load the image into the kind cluster
+# Load agent image into the kind cluster
 kind load docker-image ${AGENT_IMAGE} --name ${CLUSTER_NAME}
 
-# Deploy the agent using the manifest
+# Deploy the agent image using the manifest
 envsubst < github-agent-deployment.yaml | kubectl apply -n ${NAMESPACE} -f -
 ```
 <!-- kubectl apply -f github-agent-deployment.yaml -n $NAMESPACE -->
 
-Wait a few moments and verify that both pods (`github-mcp-server` and `github-custom-agent`) are running:
+Wait a few moments and verify that both pods, `github-mcp-server` (`MCP_SERVER_NAME`),  and `github-custom-agent` (`AGENT_NAME`), are running:
 ```bash
 kubectl get pods -n ${NAMESPACE}
 ```
@@ -147,78 +147,34 @@ kubectl port-forward service/${AGENT_SERVICE_NAME} 8000:80 -n ${NAMESPACE}
 **In Terminal 2 (Run your tests):**
 Fetch the agent card (discovery):
 ```bash
-curl http://localhost:8000/.well-known/agent.json
+curl http://localhost:8000/.well-known/agent.json  
+# or use "agent-card.json", instead of "agent.json"
 ```
 Send a task (A2A tasks/send):
 ```bash
 curl -X POST http://localhost:8000/ \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2.0",
-    "id": "test-001",
-    "method": "tasks/send",
-    "params": {
-      "id": "task-001",
-      "message": {
-        "role": "user",
-        "parts": [{"type": "text", "text": "List all repositories of user:alisterbaroi"}]
-      }
+  "id": "test-001",
+  "jsonrpc": "2.0",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "messageId": "msg-001",
+      "role": "user",
+      "parts": [{ "kind": "text", "text": "What is the latest open issue on octocat/Hello-World"}]
     }
-  }'
+  }
+}'
 ```
 
 Call from another pod in the same cluster (A2A inter-agent):
 ```bash
-curl -X POST http://github-custom-agent-service.github-mcp.svc.cluster.local/
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "test-001",
-    "method": "tasks/send",
-    "params": {
-      "id": "task-001",
-      "message": {
-        "role": "user",
-        "parts": [{"type": "text", "text": "List all repositories of user:alisterbaroi"}]
-      }
-    }
-  }'
-```
-<!-- Ping the `/tools` endpoint to verify the agent can successfully retrieve the toolset from the MCP server:
-```bash
-curl -X GET http://localhost:8000/tools \
-  -H "Authorization: Bearer ${GITHUB_PAT}"
+curl -X POST http://${AGENT_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local/ \
+  # rest is same as previous ...
 ```
 
-To test, try running curl the command to read the `README.md` file from this repository:
-```bash
-curl -X POST http://localhost:8000/run-tool \
-  -H "Authorization: Bearer ${GITHUB_PAT}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool_name": "get_file_contents",
-    "arguments": {
-        "owner": "alisterbaroi",
-        "repo": "github-agent",
-        "path": "README.md"
-    }
-  }'
-```
-
-Or, fetch repository info using the `search_repositories` tool:
-```bash
-curl -X POST http://localhost:8000/run-tool \
-  -H "Authorization: Bearer ${GITHUB_PAT}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tool_name": "search_repositories",
-    "arguments": {
-        "query": "user:alisterbaroi github-agent"
-    }
-  }'
-``` -->
-
-For testing via UI & API documentations, visit: 
+For viewing API documentations & schema, open: 
 - [localhost:8000/docs](http://localhost:8000/docs)
 - [localhost:8000/redoc](http://localhost:8000/redoc)
 
