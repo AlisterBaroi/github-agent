@@ -8,7 +8,7 @@ Before you begin, ensure you have the following installed on your machine:
 * [kubectl](https://kubernetes.io/docs/tasks/tools/) — Kubernetes command-line tool
 * [GitHub Personal Access Token (PAT)](https://github.com/settings/personal-access-tokens) — A fine-grained PAT with read/write access to the repositories you want to manage. Expand `How to Create a GitHub Personal Access Token (PAT)` section below to get started. [Learn more](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
-
+<h3 style='color:#7cfc00 !important;'>How to Create a GitHub PAT (Expand to read)<h3>
 <details>
 <summary><h3 style='color:#7cfc00 !important;'>How to Create a GitHub PAT (Expand to read)<h3></summary>
 
