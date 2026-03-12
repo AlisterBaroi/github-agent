@@ -1,5 +1,5 @@
-# GitHub MCP Custom Agent on Kubernetes
-This repository contains a headless, FastAPI-based Python agent that dynamically communicates with the official GitHub Model Context Protocol (MCP) server. Both the agent and the MCP server are designed to be deployed side-by-side within a Kubernetes cluster.
+# GitHub Agent & MCP Server for k8s
+This project is a headless, FastAPI-based, A2A-native custom agent that dynamically communicates with the official GitHub Model Context Protocol (MCP) server. Both the agent and the MCP server are designed to be deployed and self-hosted side-by-side within a Kubernetes cluster.
 
 ## Prerequisites
 Before you begin, ensure you have the following installed on your machine:
@@ -117,7 +117,7 @@ envsubst < github-mcp-server-deployment.yaml | kubectl apply -n ${NAMESPACE} -f 
 ```
 <!-- kubectl apply -f github-mcp-server-deployment.yaml -n $NAMESPACE -->
 
-### 5. Build and Deploy the Custom Agent
+### 5. Build and Deploy the GitHub Agent
 Because the agent uses a custom Python image, you need to build it locally and load it into your `kind` cluster before deploying using its kubernetes deployment and service manifests file.
 ```bash
 # Build the Docker image for agent locally
