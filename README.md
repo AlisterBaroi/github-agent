@@ -6,6 +6,7 @@ Before you begin, ensure you have the following installed on your machine:
 * [Docker](https://docs.docker.com/get-docker/) — Container runtime
 * [kind](https://kind.sigs.k8s.io/) — (Kubernetes IN Docker)
 * [kubectl](https://kubernetes.io/docs/tasks/tools/) — Kubernetes command-line tool
+* [uv](https://docs.astral.sh/uv/) — (Optional, for local development) Fast Python package manager
 * [GitHub Personal Access Token (PAT)](https://github.com/settings/personal-access-tokens) — A fine-grained PAT with read/write access to the repositories you want to manage. Expand [How to Create a GitHub PAT (Expand to read)](#how-to-create-a-github-pat-expand-to-read) section to get started. [Learn more](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
 <details>
@@ -65,7 +66,7 @@ Before you begin, ensure you have the following installed on your machine:
 > Never commit your PAT to git repositories! Always use environment variables or secrets managers.
 
 > [!NOTE]
-> Make sure to copy the `.env.example` file, rename as `.env` and paste in the GitHub PAT for the `GITHUB_PAT` value. 
+> Make sure to copy the `.env.example` file, rename as `.env` and paste in the GitHub PAT for the `GITHUB_PAT` value.
 
 ## Setup & Deployment Guide
 ### 1. Set Environment Variables
@@ -120,8 +121,11 @@ envsubst < github-mcp-server-deployment.yaml | kubectl apply -n ${NAMESPACE} -f 
 ### 5. Build and Deploy the GitHub Agent
 Because the agent uses a custom Python image, you need to build it locally and load it into your `kind` cluster before deploying using its kubernetes deployment and service manifests file.
 ```bash
-# Build the Docker image for agent locally
+# Build the Docker image for agent locally (uses uv for fast installs)
 docker build -t ${AGENT_IMAGE} .
+
+# Fallback: build with pip if uv is unavailable
+# docker build -f Dockerfile.pip -t ${AGENT_IMAGE} .
 
 # Load agent image into the kind cluster
 kind load docker-image ${AGENT_IMAGE} --name ${CLUSTER_NAME}
@@ -178,9 +182,26 @@ For viewing API documentations & schema, open:
 - [localhost:8000/docs](http://localhost:8000/docs)
 - [localhost:8000/redoc](http://localhost:8000/redoc)
 
-### 7. Cleanup
+## Cleanup
 When you are finished testing, you can tear down the entire `kind` cluster to free up local resources:
 ```bash
 kind delete cluster --name ${CLUSTER_NAME}
 ```
 Optionally, also delete the GitHub PAT from your GitHub settings.
+
+## Local Development
+To install dependencies & run locally for development, it's recommended to use the **primary method** using `uv` (fast):
+```bash
+# install dependencies
+uv sync 
+# Run development server
+uv run uvicorn main:app --reload
+```
+As a fallback, you can also you the traditional `pip` method:
+```bash
+# install dependencies
+pip install -r requirements.txt
+# Run development server
+uvicorn main:app --reload
+```
+
