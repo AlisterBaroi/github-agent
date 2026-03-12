@@ -24,6 +24,9 @@ env/
 venv/
 ENV/
 
+# uv cache
+.uv/
+
 # ADK local state
 .adk/
 

@@ -1,18 +1,31 @@
-# Use an official lightweight Python image
-FROM python:3.12-slim
+# Stage 1: Build dependencies with uv
 
-# Set the working directory in the container
+# Use official lightweight uv image
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
 WORKDIR /app
 
-# Copy dependencies & install them
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy dependency files first (layer caching)
+COPY pyproject.toml uv.lock ./
 
-# Copy source files
+# Install dependencies into a standalone venv, no project install yet
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Copy the rest of the project and install it
 COPY . .
+RUN uv sync --frozen --no-dev
 
-# List all files in container
-RUN ls -a
+# Stage 2: Lean runtime image
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy the venv and app code from builder
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app /app
+
+# Use the venv's Python directly — no uv needed at runtime
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Expose ports 8000 (FastAPI) & 8001 (ADK Web UI)
 EXPOSE 8000 8001
