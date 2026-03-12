@@ -29,6 +29,7 @@ ENV/
 
 # Version control
 .git/
+.github/
 .gitignore
 
 # IDE and OS noise
