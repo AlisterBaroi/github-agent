@@ -40,10 +40,13 @@ Before you begin, ensure you have the following installed on your machine:
 >    - Click **"Generate token"**
 >    - **Important**: Copy the token immediately - you won't see it again!
 >    - Store it securely (use a password manager or Kubernetes secrets)
-> 
-[!WARNING] 
-Never commit your PAT to git repositories! Always use environment variables or secrets managers.
-> 
+ 
+> [!WARNING] 
+> Never commit your PAT to git repositories! Always use environment variables or secrets managers.
+
+> [!WARNING]
+> Urgent info that needs immediate user attention to avoid problems.
+
 > 6. **Test Your Token**
 >    ```bash
 >    curl -H "Authorization: Bearer <YOUR_PAT>" \
