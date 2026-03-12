@@ -20,7 +20,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.genai import types as genai_types
-from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
+from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI, A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, InMemoryPushNotificationConfigStore
 from a2a.types import AgentCard, AgentCapabilities, AgentSkill
@@ -117,7 +117,7 @@ _a2a_app = A2AFastAPIApplication(
 )
 
 # ── FastAPI application
-app = FastAPI(title="GitHub Agent (A2A)", version=AGENT_VERSION)
+app = A2AFastAPI(title="GitHub Agent (A2A)", version=AGENT_VERSION)
 
 
 app.add_middleware(
@@ -131,6 +131,45 @@ app.add_middleware(
 # Add A2A routes: POST /, GET /.well-known/agent-card.json, GET /.well-known/agent.json
 _a2a_app.add_routes_to_app(app)
 
+# Patch the OpenAPI schema to add a custom description and example to the A2A POST / endpoint.
+_original_openapi = app.openapi
+
+
+def _custom_openapi():
+    schema = _original_openapi()
+    if "/" in schema.get("paths", {}):
+        post = schema["paths"]["/"]["post"]
+        post["summary"] = post.get("summary", "") + " (A2A JSON-RPC 2.0)"
+        post["description"] = (
+            post.get("description", "") + "\n\n"
+            "A2A protocol endpoint. Supports **message/send**, **message/stream**, "
+            "**tasks/get**, and **tasks/cancel**." + "\n\n"
+            "Example request **(message/send)**:\n"
+            "```json\n"
+            "{\n"
+            '  "id": "test-001",\n'
+            '  "jsonrpc": "2.0",\n'
+            '  "method": "message/send",\n'
+            '  "params": {\n'
+            '    "message": {\n'
+            '      "messageId": "msg-001",\n'
+            '      "role": "user",\n'
+            '      "parts": [\n'
+            "        {\n"
+            '          "kind": "text",\n'
+            '          "text": "List all open issues in username/repository"\n'
+            "        }\n"
+            "      ]\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+            "```"
+        )
+    return schema
+
+
+app.openapi = _custom_openapi
+
 
 # ── Simple message endpoint (non-A2A convenience)
 class MessageRequest(BaseModel):
@@ -139,9 +178,7 @@ class MessageRequest(BaseModel):
     message: str
 
 
-@app.post(
-    "/message", summary="Send a simple message", response_description="Agent reply"
-)
+@app.post("/message", summary="Simple Message", response_description="Agent reply")
 async def handle_message(body: MessageRequest):
     """
     Send a plain-English message to the GitHub agent (non-A2A endpoint, with no memory/state) for UI testing convenience.
