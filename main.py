@@ -12,7 +12,7 @@ A2A protocol support is provided by google-adk's built-in A2A integration (A2aAg
 state machine, task persistence, and a spec-compliant agent card.
 """
 
-import os, uuid, time, uvicorn, logging, httpx
+import os, uuid, uvicorn, logging
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,16 +23,14 @@ from google.genai import types as genai_types
 from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI, A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, InMemoryPushNotificationConfigStore
-from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 from gh_agent.agent import build_agent
 from tools_catalogue import tools_router
+from utilities import health_router, init_health_dependencies, agent_card, patch_openapi
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 log = logging.getLogger("github-agent")
 AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.0")
-_start_time = time.time()
-_REQUIRED_ENV_VARS = ["GITHUB_PAT", "MCP_SERVER_URL", "AGENT_HOST", "GOOGLE_API_KEY"]
 
 # ── ADK infrastructure: Module-level singletons, created once when the container starts
 _agent = build_agent()
@@ -45,66 +43,6 @@ _runner = Runner(
     session_service=_session_service,
 )
 
-# ── A2A Agent Card: External agents/orchestrators fetch this at GET /.well-known/agent-card.json to see agent's specialty before sending tasks.
-_agent_card = AgentCard(  # a2a-sdk's AgentCard model for full spec compliance.
-    name="GitHub Agent",
-    description=(
-        "Headless GitHub agent with full MCP toolset access. "
-        "Manages repos, issues, pull requests, files, branches, and more."
-    ),
-    url=os.getenv("AGENT_HOST"),
-    version=AGENT_VERSION,
-    capabilities=AgentCapabilities(
-        streaming=True,
-        push_notifications=False,
-        state_transition_history=True,
-    ),
-    default_input_modes=["text/plain"],
-    default_output_modes=["text/plain"],
-    skills=[
-        AgentSkill(
-            id="repo_management",
-            name="Repository Management",
-            description="Create, update, fork, and search GitHub repositories.",
-            tags=["github", "repository"],
-            examples=[
-                "Create a new private repository called my-service",
-                "Search for repositories owned by user:alisterbaroi",
-            ],
-        ),
-        AgentSkill(
-            id="issue_tracking",
-            name="Issue Tracking",
-            description="Create, update, list, and close GitHub issues.",
-            tags=["github", "issues"],
-            examples=[
-                "List all open issues in alisterbaroi/github-agent",
-                "Create an issue titled 'Bug: 500 on login endpoint'",
-            ],
-        ),
-        AgentSkill(
-            id="pull_requests",
-            name="Pull Request Management",
-            description="Create, review, list, and manage pull requests.",
-            tags=["github", "pull-requests"],
-            examples=[
-                "List open PRs in alisterbaroi/github-agent",
-                "Get the diff for PR #12",
-            ],
-        ),
-        AgentSkill(
-            id="code_operations",
-            name="Code & File Operations",
-            description="Read, create, update, and search files in repositories.",
-            tags=["github", "code", "files"],
-            examples=[
-                "Read the contents of README.md from my repo",
-                "Search for TODO comments across the codebase",
-            ],
-        ),
-    ],
-)
-
 # ── A2A wiring: Wire the ADK Runner into the A2A protocol stack (Runner → A2aAgentExecutor → DefaultRequestHandler → A2AFastAPIApplication)
 _task_store = InMemoryTaskStore()
 _agent_executor = A2aAgentExecutor(runner=_runner)
@@ -114,7 +52,7 @@ _request_handler = DefaultRequestHandler(
     push_config_store=InMemoryPushNotificationConfigStore(),
 )
 _a2a_app = A2AFastAPIApplication(
-    agent_card=_agent_card,
+    agent_card=agent_card,
     http_handler=_request_handler,
 )
 
@@ -132,44 +70,7 @@ app.add_middleware(
 # Add A2A routes: POST /, GET /.well-known/agent-card.json, GET /.well-known/agent.json
 _a2a_app.add_routes_to_app(app)
 
-# Patch the OpenAPI schema to add a custom description and example to the A2A POST / endpoint.
-_original_openapi = app.openapi
-
-
-def _custom_openapi():
-    schema = _original_openapi()
-    if "/" in schema.get("paths", {}):
-        post = schema["paths"]["/"]["post"]
-        post["summary"] = post.get("summary", "") + " (A2A JSON-RPC 2.0)"
-        post["description"] = (
-            post.get("description", "") + "\n\n"
-            "A2A protocol endpoint. Supports **message/send**, **message/stream**, "
-            "**tasks/get**, and **tasks/cancel**." + "\n\n"
-            "Example request **(message/send)**:\n"
-            "```json\n"
-            "{\n"
-            '  "id": "test-001",\n'
-            '  "jsonrpc": "2.0",\n'
-            '  "method": "message/send",\n'
-            '  "params": {\n'
-            '    "message": {\n'
-            '      "messageId": "msg-001",\n'
-            '      "role": "user",\n'
-            '      "parts": [\n'
-            "        {\n"
-            '          "kind": "text",\n'
-            '          "text": "List all open issues in username/repository"\n'
-            "        }\n"
-            "      ]\n"
-            "    }\n"
-            "  }\n"
-            "}\n"
-            "```"
-        )
-    return schema
-
-
-app.openapi = _custom_openapi
+patch_openapi(app)
 
 
 # ── Simple message endpoint (non-A2A convenience)
@@ -228,93 +129,10 @@ async def _run_agent(session_id: str, user_text: str) -> str:
     return final_text or "Task completed (agent produced no text output)."
 
 
-# Register the tools catalogue router.
+# Register routers
 app.include_router(tools_router)
-
-
-@app.get("/healthz")
-async def liveness():
-    """Kubernetes liveness probe — is the process alive?"""
-    return {
-        "status": "ok",
-        "version": AGENT_VERSION,
-        "uptime_seconds": round(time.time() - _start_time, 2),
-    }
-
-
-@app.get("/readyz")
-async def readiness():
-    """Kubernetes readiness probe — are all dependencies functional?"""
-    checks: dict[str, str] = {}
-    # 1. Environment configuration
-    missing_vars = [v for v in _REQUIRED_ENV_VARS if not os.getenv(v)]
-    checks["env_config"] = (
-        "ok" if not missing_vars else f"missing: {', '.join(missing_vars)}"
-    )
-    # 2. ADK Runner & Agent readiness
-    checks["agent"] = "ok" if _agent is not None else "not initialized"
-    checks["runner"] = "ok" if _runner is not None else "not initialized"
-    # 3. Session service
-    try:
-        probe_sid = f"_healthcheck_{uuid.uuid4()}"
-        await _session_service.create_session(
-            app_name="github_agent",
-            user_id="_healthcheck",
-            session_id=probe_sid,
-        )
-        await _session_service.delete_session(
-            app_name="github_agent",
-            user_id="_healthcheck",
-            session_id=probe_sid,
-        )
-        checks["session_service"] = "ok"
-    except Exception as exc:
-        checks["session_service"] = f"error: {exc}"
-    # 4. Task store
-    try:
-        _task_store.get if callable(getattr(_task_store, "get", None)) else None
-        checks["task_store"] = "ok"
-    except Exception as exc:
-        checks["task_store"] = f"error: {exc}"
-    # 5. GitHub MCP connectivity
-    mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:8082/mcp")
-    github_pat = os.getenv("GITHUB_PAT", "")
-    if not github_pat:
-        checks["github_mcp"] = "skipped: GITHUB_PAT not set"
-    else:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(
-                    mcp_url,
-                    headers={
-                        "Authorization": f"Bearer {github_pat}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "jsonrpc": "2.0",
-                        "id": "health",
-                        "method": "tools/list",
-                        "params": {},
-                    },
-                )
-            checks["github_mcp"] = (
-                "ok" if resp.status_code == 200 else f"http {resp.status_code}"
-            )
-        except Exception as exc:
-            checks["github_mcp"] = f"unreachable: {exc}"
-    # Overall status
-    all_ok = all(v == "ok" for v in checks.values())
-    status_code = 200 if all_ok else 503
-
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "status": "ok" if all_ok else "degraded",
-            "version": AGENT_VERSION,
-            "uptime_seconds": round(time.time() - _start_time, 2),
-            "checks": checks,
-        },
-    )
+init_health_dependencies(_agent, _runner, _session_service, _task_store)
+app.include_router(health_router)
 
 
 if __name__ == "__main__":
