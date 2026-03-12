@@ -1,16 +1,26 @@
-# Kubernetes deployment manifests 
-github-agent-deployment.yaml
-github-mcp-server-deployment.yaml
+# Dockerfiles (not needed inside the image)
+Dockerfile
+Dockerfile.pip
 
-# Documentation 
-README.md
+# Kubernetes deployment manifests
+*.yaml
+
+# Documentation & metadata
 *.md
+LICENSE
 
-# Environment files 
+# Environment files
 .env
 .env.example
 
-# Python cache ─
+# Dependency files (consumed during build, not needed at runtime)
+requirements.txt
+pyproject.toml
+uv.lock
+.python-version
+
+# Python cache
+__pycache__/
 *.py[cod]
 *.pyo
 .mypy_cache/
@@ -29,6 +39,9 @@ ENV/
 
 # ADK local state
 .adk/
+
+# Claude Code
+.claude/
 
 # Version control
 .git/

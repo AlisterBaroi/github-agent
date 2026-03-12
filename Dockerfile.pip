@@ -10,8 +10,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source files
-COPY . .
+# Copy main runtime files
+COPY main.py tools_catalogue.py utilities.py start.sh ./
+COPY gh_agent/ ./gh_agent/
 
 # Expose ports 8000 (FastAPI) & 8001 (ADK Web UI)
 EXPOSE 8000 8001
