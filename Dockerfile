@@ -20,9 +20,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy the venv and app code from builder
+# Copy the venv (installed packages) from builder
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app /app
+
+# Copy only the runtime source files
+COPY main.py tools_catalogue.py utilities.py start.sh ./
+COPY gh_agent/ ./gh_agent/
 
 # Use the venv's Python directly — no uv needed at runtime
 ENV PATH="/app/.venv/bin:$PATH"
