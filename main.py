@@ -13,7 +13,6 @@ state machine, task persistence, and a spec-compliant agent card.
 
 import os, uuid, uvicorn, logging
 from pydantic import BaseModel
-from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.adk.runners import Runner
