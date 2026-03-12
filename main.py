@@ -5,13 +5,14 @@ Endpoints:
   GET  /.well-known/agent-card.json   →  A2A agent card (canonical)
   GET  /.well-known/agent.json        →  A2A agent card (backward compat)
   POST /message                       →  Simple message endpoint (non-A2A convenience)
-  GET  /health                        →  Kubernetes liveness / readiness probe
+  GET  /healthz                       →  Kubernetes liveness probe
+  GET  /readyz                        →  Kubernetes readiness probe (deep dependency checks)
   GET  /list_all_tools                →  MCP tool catalogue
 A2A protocol support is provided by google-adk's built-in A2A integration (A2aAgentExecutor + A2AFastAPIApplication), giving full spec compliance: message/send, message/stream (SSE), tasks/get, tasks/cancel, proper task
 state machine, task persistence, and a spec-compliant agent card.
 """
 
-import os, uuid, uvicorn, logging
+import os, uuid, time, uvicorn, logging, httpx
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +30,9 @@ from tools_catalogue import tools_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 log = logging.getLogger("github-agent")
-AGENT_VERSION = os.getenv("AGENT_VERSION", "1.0.9")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.0")
+_start_time = time.time()
+_REQUIRED_ENV_VARS = ["GITHUB_PAT", "MCP_SERVER_URL", "AGENT_HOST", "GOOGLE_API_KEY"]
 
 # ── ADK infrastructure: Module-level singletons, created once when the container starts
 _agent = build_agent()
@@ -118,7 +121,6 @@ _a2a_app = A2AFastAPIApplication(
 # ── FastAPI application
 app = A2AFastAPI(title="GitHub Agent (A2A)", version=AGENT_VERSION)
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # tighten to specific origins if preferred
@@ -186,7 +188,6 @@ async def handle_message(body: MessageRequest):
     ```
     """
     log.info(f"message request: {body.message!r}")
-
     session_id = str(uuid.uuid4())
     await _session_service.create_session(
         app_name="github_agent",
@@ -231,14 +232,89 @@ async def _run_agent(session_id: str, user_text: str) -> str:
 app.include_router(tools_router)
 
 
-@app.get("/health")
-async def health_check():
-    """Kubernetes liveness and readiness probe."""
+@app.get("/healthz")
+async def liveness():
+    """Kubernetes liveness probe — is the process alive?"""
     return {
         "status": "ok",
-        "message": "GitHub Agent is running",
         "version": AGENT_VERSION,
+        "uptime_seconds": round(time.time() - _start_time, 2),
     }
+
+
+@app.get("/readyz")
+async def readiness():
+    """Kubernetes readiness probe — are all dependencies functional?"""
+    checks: dict[str, str] = {}
+    # 1. Environment configuration
+    missing_vars = [v for v in _REQUIRED_ENV_VARS if not os.getenv(v)]
+    checks["env_config"] = (
+        "ok" if not missing_vars else f"missing: {', '.join(missing_vars)}"
+    )
+    # 2. ADK Runner & Agent readiness
+    checks["agent"] = "ok" if _agent is not None else "not initialized"
+    checks["runner"] = "ok" if _runner is not None else "not initialized"
+    # 3. Session service
+    try:
+        probe_sid = f"_healthcheck_{uuid.uuid4()}"
+        await _session_service.create_session(
+            app_name="github_agent",
+            user_id="_healthcheck",
+            session_id=probe_sid,
+        )
+        await _session_service.delete_session(
+            app_name="github_agent",
+            user_id="_healthcheck",
+            session_id=probe_sid,
+        )
+        checks["session_service"] = "ok"
+    except Exception as exc:
+        checks["session_service"] = f"error: {exc}"
+    # 4. Task store
+    try:
+        _task_store.get if callable(getattr(_task_store, "get", None)) else None
+        checks["task_store"] = "ok"
+    except Exception as exc:
+        checks["task_store"] = f"error: {exc}"
+    # 5. GitHub MCP connectivity
+    mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:8082/mcp")
+    github_pat = os.getenv("GITHUB_PAT", "")
+    if not github_pat:
+        checks["github_mcp"] = "skipped: GITHUB_PAT not set"
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    mcp_url,
+                    headers={
+                        "Authorization": f"Bearer {github_pat}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "health",
+                        "method": "tools/list",
+                        "params": {},
+                    },
+                )
+            checks["github_mcp"] = (
+                "ok" if resp.status_code == 200 else f"http {resp.status_code}"
+            )
+        except Exception as exc:
+            checks["github_mcp"] = f"unreachable: {exc}"
+    # Overall status
+    all_ok = all(v == "ok" for v in checks.values())
+    status_code = 200 if all_ok else 503
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if all_ok else "degraded",
+            "version": AGENT_VERSION,
+            "uptime_seconds": round(time.time() - _start_time, 2),
+            "checks": checks,
+        },
+    )
 
 
 if __name__ == "__main__":
