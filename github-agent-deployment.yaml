@@ -17,7 +17,7 @@ spec:
       containers:
       - name: agent
         image: ${AGENT_IMAGE}
-        imagePullPolicy: Never # Force K8s to use local image that's loaded
+        imagePullPolicy: IfNotPresent # Force K8s to use local image that's loaded
         env:
         # Route directly to the internal Kubernetes service name
         - name: MCP_SERVER_URL
