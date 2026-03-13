@@ -15,8 +15,6 @@ LICENSE
 
 # Dependency files (consumed during build, not needed at runtime)
 requirements.txt
-pyproject.toml
-uv.lock
 .python-version
 
 # Python cache

@@ -75,6 +75,8 @@ def patch_openapi(app):
     original_openapi = app.openapi
 
     def _custom_openapi():
+        if app.openapi_schema:  # cache the schema, to prevent UI bugs
+            return app.openapi_schema
         schema = original_openapi()
         if "/" in schema.get("paths", {}):
             post = schema["paths"]["/"]["post"]
@@ -104,6 +106,7 @@ def patch_openapi(app):
                 "}\n"
                 "```"
             )
+        app.openapi_schema = schema
         return schema
 
     app.openapi = _custom_openapi

@@ -39,6 +39,12 @@ spec:
             secretKeyRef:
               name: ${AGENT_SECRET_NAME}
               key: GOOGLE_API_KEY
+        - name: DEV_MODE  # if true, starts ADK Web UI on port 8001 alongside FastAPI 8000
+          valueFrom:
+            secretKeyRef:
+              name: ${AGENT_SECRET_NAME}
+              key: DEVELOPMENT_MODE
+
         # Optional: switch to Claude by setting these two env vars instead
         # - name: AGENT_MODEL
         #   value: "anthropic/claude-sonnet-4-5"
@@ -58,13 +64,13 @@ spec:
         # The ADK web UI has no health endpoint.
         readinessProbe:
           httpGet:
-            path: /health
+            path: /readyz
             port: 8000
           initialDelaySeconds: 10
           periodSeconds: 5
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: 8000
           initialDelaySeconds: 15
           periodSeconds: 10
@@ -84,8 +90,7 @@ spec:
       port: 80
       targetPort: 8000
 ---
-# Separate service for the ADK Web UI.
-# Not needed for production traffic; other agents always talk to the FastAPI service.
+# Separate service for the ADK Web UI; only for development, when needed.
 apiVersion: v1
 kind: Service
 metadata:

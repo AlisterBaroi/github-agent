@@ -109,6 +109,7 @@ kubectl create secret generic ${MCP_SECRET_NAME} \
 
 kubectl create secret generic ${AGENT_SECRET_NAME} \
   --from-literal=GOOGLE_API_KEY=${GEMINI_API_KEY} \
+  --from-literal=DEVELOPMENT_MODE=${DEV_MODE} \
   --namespace ${NAMESPACE}
 ```
 
@@ -179,7 +180,7 @@ curl -X POST http://${AGENT_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local/ \
   # rest is same as previous ...
 ```
 
-For viewing API documentations & schema, open: 
+For viewing API documentations & schema, open:
 - [localhost:8000/docs](http://localhost:8000/docs)
 - [localhost:8000/redoc](http://localhost:8000/redoc)
 
@@ -190,7 +191,8 @@ kind delete cluster --name ${CLUSTER_NAME}
 ```
 Optionally, also delete the GitHub PAT from your GitHub settings.
 
-## Local Development
+## Development
+### Local Development
 To install dependencies & run locally for development, it's recommended to use the **primary method** using `uv` (fast):
 ```bash
 # install dependencies
@@ -205,4 +207,23 @@ pip install -r requirements.txt
 # Run development server
 uvicorn main:app --reload
 ```
+
+### Cluster Development
+To change `DEVELOPMENT_MODE` in the cluster (to access ADK Web UI) secret after deployment, patch the secret and restart the agent:
+```bash
+# Update the secret value (set to "true" or "false", default is "false")
+kubectl get secret ${AGENT_SECRET_NAME} -n ${NAMESPACE} -o json \
+  | jq --arg val "$(echo -n 'true' | base64)" '.data.DEVELOPMENT_MODE = $val' \
+  | kubectl apply -f -
+
+# Restart the agent to pick up the new value
+kubectl rollout restart deployment/${AGENT_NAME} -n ${NAMESPACE}
+kubectl rollout status deployment/${AGENT_NAME} -n ${NAMESPACE}
+```
+
+Then port-forward the ADK Web UI:
+```bash
+kubectl port-forward service/${AGENT_SERVICE_NAME}-adk 8001:8001 -n ${NAMESPACE}
+```
+Open [localhost:8001](http://localhost:8001) to access the ADK Web UI.
 
