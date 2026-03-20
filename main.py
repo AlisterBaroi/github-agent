@@ -25,12 +25,18 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, InMemoryPushNotificationConfigStore
 from gh_agent.agent import build_agent
 from tools_catalogue import tools_router
-from utilities import health_router, init_health_dependencies, agent_card, patch_openapi, A2AFastAPIApplicationWithHTTPErrors
+from utilities import (
+    health_router,
+    init_health_dependencies,
+    agent_card,
+    patch_openapi,
+    A2AFastAPIApplicationWithHTTPErrors,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 log = logging.getLogger("github-agent")
-AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.0")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.2")
 
 # ── ADK infrastructure: Module-level singletons, created once when the container starts
 _agent = build_agent()

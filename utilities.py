@@ -6,8 +6,9 @@ from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
 
 health_router = APIRouter()
 
-AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.0")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.2")
 _start_time = time.time()
+
 
 class A2AFastAPIApplicationWithHTTPErrors(A2AFastAPIApplication):
     _JSONRPC_TO_HTTP = {
@@ -23,6 +24,7 @@ class A2AFastAPIApplicationWithHTTPErrors(A2AFastAPIApplication):
         code = error.root.code if isinstance(error, A2AError) else error.code
         response.status_code = self._JSONRPC_TO_HTTP.get(code, 200)
         return response
+
 
 # ── A2A Agent Card
 agent_card = AgentCard(
