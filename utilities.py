@@ -1,12 +1,28 @@
 import os, uuid, time, httpx
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+from a2a.types import AgentCard, AgentCapabilities, AgentSkill, A2AError, JSONRPCError
+from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPIApplication
 
 health_router = APIRouter()
 
 AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.0")
 _start_time = time.time()
+
+class A2AFastAPIApplicationWithHTTPErrors(A2AFastAPIApplication):
+    _JSONRPC_TO_HTTP = {
+        -32700: 400,  # Parse error
+        -32600: 400,  # Invalid request
+        -32602: 400,  # Invalid params
+        -32601: 404,  # Method not found
+        -32603: 500,  # Internal error
+    }
+
+    def _generate_error_response(self, request_id, error):
+        response = super()._generate_error_response(request_id, error)
+        code = error.root.code if isinstance(error, A2AError) else error.code
+        response.status_code = self._JSONRPC_TO_HTTP.get(code, 200)
+        return response
 
 # ── A2A Agent Card
 agent_card = AgentCard(
