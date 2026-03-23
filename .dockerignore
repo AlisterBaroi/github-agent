@@ -14,7 +14,6 @@ LICENSE
 .env.example
 
 # Dependency files (consumed during build, not needed at runtime)
-requirements.txt
 .python-version
 
 # Python cache

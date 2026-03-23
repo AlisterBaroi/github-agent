@@ -200,7 +200,7 @@ uv sync
 # Run development server
 uv run uvicorn main:app --reload
 ```
-As a fallback, you can also you the traditional `pip` method:
+As a fallback, you can also do the traditional `pip` method:
 ```bash
 # install dependencies
 pip install -r requirements.txt
@@ -209,9 +209,9 @@ uvicorn main:app --reload
 ```
 
 ### Cluster Development
-To change `DEVELOPMENT_MODE` in the cluster (to access ADK Web UI) secret after deployment, patch the secret and restart the agent:
+To change `DEVELOPMENT_MODE` of the agent pod in the cluster (to access ADK Web UI), patch the secret (with `DEVELOPMENT_MODE=true`) and restart the agent. This prevents reduilding container image or redeploying using manifest (`.yaml`) file:
 ```bash
-# Update the secret value (set to "true" or "false", default is "false")
+# Update the secret value to 'true' (true/false, default: false)
 kubectl get secret ${AGENT_SECRET_NAME} -n ${NAMESPACE} -o json \
   | jq --arg val "$(echo -n 'true' | base64)" '.data.DEVELOPMENT_MODE = $val' \
   | kubectl apply -f -
@@ -225,5 +225,5 @@ Then port-forward the ADK Web UI:
 ```bash
 kubectl port-forward service/${AGENT_SERVICE_NAME}-adk 8001:8001 -n ${NAMESPACE}
 ```
-Open [localhost:8001](http://localhost:8001) to access the ADK Web UI.
+Open [localhost:8001](http://localhost:8001) to access the ADK Web UI, and [localhost:8001/docs](http://localhost:8001/docs) for its schema (also FastAPI).
 

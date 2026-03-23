@@ -20,17 +20,23 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.genai import types as genai_types
-from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI, A2AFastAPIApplication
+from a2a.server.apps.jsonrpc.fastapi_app import A2AFastAPI
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, InMemoryPushNotificationConfigStore
 from gh_agent.agent import build_agent
 from tools_catalogue import tools_router
-from utilities import health_router, init_health_dependencies, agent_card, patch_openapi
+from utilities import (
+    health_router,
+    init_health_dependencies,
+    agent_card,
+    patch_openapi,
+    A2AFastAPIApplicationWithHTTPErrors,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 log = logging.getLogger("github-agent")
-AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.0")
+AGENT_VERSION = os.getenv("AGENT_VERSION", "1.1.2")
 
 # ── ADK infrastructure: Module-level singletons, created once when the container starts
 _agent = build_agent()
@@ -51,7 +57,7 @@ _request_handler = DefaultRequestHandler(
     task_store=_task_store,
     push_config_store=InMemoryPushNotificationConfigStore(),
 )
-_a2a_app = A2AFastAPIApplication(
+_a2a_app = A2AFastAPIApplicationWithHTTPErrors(
     agent_card=agent_card,
     http_handler=_request_handler,
 )
